@@ -368,3 +368,44 @@ class TickStream:
             theta=_clean(greeks.theta) if greeks else None,
             vega=_clean(greeks.vega) if greeks else None,
         )
+
+
+# ---------------------------------------------------------------------------
+# Standalone smoke test (requires live TWS on port 7496/7497)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import asyncio as _asyncio
+    from src.connection.ibkr_client import IBKRClient
+    from src.data.chain_fetcher import ChainFetcher
+
+    async def _main() -> None:
+        async with IBKRClient() as client:
+            fetcher = ChainFetcher(client)
+            logger.info("Fetching SPY chain (2 expiries, ±5% strikes)...")
+            snapshot = await fetcher.fetch_chain("SPY", max_expiries=2, strike_range_pct=0.05)
+            contracts = [c for c in snapshot.contracts if c.con_id]
+            logger.info("Subscribing to {} contracts...", len(contracts))
+
+            async with TickStream(client) as stream:
+                await stream.subscribe(contracts, underlying_price=snapshot.underlying_price)
+                logger.success(
+                    "Streaming {} contracts. Waiting for 10 ticks...",
+                    stream.subscribed_count,
+                )
+
+                tick_count = 0
+                while tick_count < 10:
+                    tick = await _asyncio.wait_for(stream.queue.get(), timeout=30)
+                    tick_count += 1
+                    logger.info(
+                        "[{}] {} {} {} {:.0f} | bid={} ask={} last={} delta={} IV={:.1%}",
+                        tick_count,
+                        tick.symbol, tick.expiry, tick.right, tick.strike,
+                        tick.bid, tick.ask, tick.last,
+                        tick.delta, tick.implied_vol or 0,
+                    )
+
+            logger.success("Smoke test complete.")
+
+    _asyncio.run(_main())
