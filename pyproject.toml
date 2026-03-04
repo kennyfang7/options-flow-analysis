@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require a live TWS/Gateway connection (deselect with -m 'not integration')",
+]
