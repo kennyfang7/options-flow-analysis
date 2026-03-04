@@ -8,11 +8,10 @@ from ib_insync import Option, Ticker
 from loguru import logger
 from pydantic import BaseModel, computed_field
 
-from src.data.chain_fetcher import _clean, _clean_int  # shared IBKR sentinel helpers
+from src.data.chain_fetcher import _clean, _clean_int, OptionContract  # shared IBKR sentinel helpers
 
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
-    from src.data.chain_fetcher import OptionContract
 
 
 # ---------------------------------------------------------------------------
@@ -164,3 +163,84 @@ class TickStream:
             Count of subscribed contracts.
         """
         return len(self._subscriptions)
+
+    async def subscribe(
+        self,
+        contracts: list[OptionContract],
+        underlying_price: float | None = None,
+    ) -> None:
+        """Subscribe to real-time market data for the given option contracts.
+
+        Reconstructs ib_insync.Option objects from OptionContract.con_id internally,
+        calls reqMktData for each, and hooks pendingTickersEvent on the first call.
+        Enforces a hard cap of MAX_MKT_DATA_LINES simultaneous subscriptions.
+
+        Args:
+            contracts: Qualified OptionContract objects (must have con_id set).
+            underlying_price: Current underlying price; stored on each TickUpdate
+                for premium calculations in downstream steps.
+
+        Raises:
+            TickStreamError: If subscribing would exceed MAX_MKT_DATA_LINES, or if
+                adding the new contracts would exceed the limit.
+        """
+        eligible = [c for c in contracts if c.con_id is not None]
+        skipped = len(contracts) - len(eligible)
+        if skipped:
+            logger.warning(
+                "subscribe: skipping {} contracts with no con_id", skipped
+            )
+
+        new_count = len([c for c in eligible if c.con_id not in self._subscriptions])
+        total_after = self.subscribed_count + new_count
+        if total_after > MAX_MKT_DATA_LINES:
+            raise TickStreamError(
+                f"Subscribing {new_count} contracts would exceed market data line limit "
+                f"({self.subscribed_count} active + {new_count} new = {total_after} > {MAX_MKT_DATA_LINES}). "
+                f"Reduce the contract list or unsubscribe first."
+            )
+
+        for contract in eligible:
+            if contract.con_id in self._subscriptions:
+                logger.debug("subscribe: con_id={} already subscribed, skipping", contract.con_id)
+                continue
+
+            ibkr_contract = Option()
+            ibkr_contract.conId = contract.con_id
+            ibkr_contract.symbol = contract.symbol
+            ibkr_contract.lastTradeDateOrContractMonth = contract.expiry
+            ibkr_contract.strike = contract.strike
+            ibkr_contract.right = contract.right
+            ibkr_contract.exchange = "SMART"
+            ibkr_contract.currency = "USD"
+            ibkr_contract.secType = "OPT"
+
+            ticker = self._ib.reqMktData(
+                ibkr_contract,
+                genericTickList=GENERIC_TICK_LIST,
+                snapshot=False,
+                regulatorySnapshot=False,
+            )
+            self._active_tickers[contract.con_id] = ticker
+            self._subscriptions[contract.con_id] = (ibkr_contract, underlying_price)
+
+        if not self._event_hooked and self._subscriptions:
+            self._ib.pendingTickersEvent += self._on_pending_tickers
+            self._event_hooked = True
+            logger.debug("subscribe: pendingTickersEvent hooked")
+
+        logger.info(
+            "subscribe: {} active subscriptions ({} new this call)",
+            self.subscribed_count, new_count,
+        )
+
+    def _on_pending_tickers(self, tickers: set) -> None:
+        """Handle pendingTickersEvent from ib_insync.
+
+        Stub — full implementation in Task 4 (tick processing pipeline).
+
+        Args:
+            tickers: Set of ib_insync.Ticker objects with fresh data.
+        """
+        # Implemented in Task 4.
+        pass
