@@ -239,3 +239,56 @@ async def test_pending_tickers_drops_on_queue_full(mock_ibkr_client):
     # This should NOT raise — logs warning and drops tick
     stream._on_pending_tickers({ticker})
     assert stream.queue.full()
+
+
+# ---------------------------------------------------------------------------
+# unsubscribe() tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_all_calls_cancel_mkt_data(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    fake_ticker_1 = MagicMock()
+    fake_ticker_2 = MagicMock()
+    stream._subscriptions[100] = (MagicMock(), None)
+    stream._subscriptions[101] = (MagicMock(), None)
+    stream._active_tickers[100] = fake_ticker_1
+    stream._active_tickers[101] = fake_ticker_2
+    stream._event_hooked = True
+
+    await stream.unsubscribe()
+
+    assert mock_ibkr_client.ib.cancelMktData.call_count == 2
+    assert stream.subscribed_count == 0
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_specific_contracts(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    fake_ticker = MagicMock()
+    stream._subscriptions[100] = (MagicMock(), None)
+    stream._subscriptions[101] = (MagicMock(), None)
+    stream._active_tickers[100] = fake_ticker
+    stream._active_tickers[101] = MagicMock()
+    stream._event_hooked = True
+
+    contract_to_remove = _make_contract(con_id=100)
+    await stream.unsubscribe([contract_to_remove])
+
+    mock_ibkr_client.ib.cancelMktData.assert_called_once_with(fake_ticker)
+    assert stream.subscribed_count == 1
+    assert 100 not in stream._subscriptions
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_removes_event_hook_when_empty(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    stream._subscriptions[100] = (MagicMock(), None)
+    stream._active_tickers[100] = MagicMock()
+    stream._event_hooked = True
+
+    await stream.unsubscribe()
+
+    mock_ibkr_client.ib.pendingTickersEvent.__isub__.assert_called_once()
+    assert not stream._event_hooked

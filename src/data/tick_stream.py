@@ -237,6 +237,41 @@ class TickStream:
             self.subscribed_count, new_count,
         )
 
+    async def unsubscribe(
+        self, contracts: list[OptionContract] | None = None
+    ) -> None:
+        """Cancel market data subscriptions.
+
+        Cancels reqMktData using the stored Ticker identity (required by ib_insync).
+        Removes the event hook when no subscriptions remain.
+
+        Args:
+            contracts: Specific contracts to unsubscribe. If None, unsubscribes all.
+        """
+        if contracts is None:
+            con_ids_to_remove = list(self._subscriptions.keys())
+        else:
+            con_ids_to_remove = [
+                c.con_id for c in contracts
+                if c.con_id is not None and c.con_id in self._subscriptions
+            ]
+
+        for con_id in con_ids_to_remove:
+            ticker = self._active_tickers.pop(con_id, None)
+            if ticker is not None:
+                self._ib.cancelMktData(ticker)
+            self._subscriptions.pop(con_id, None)
+
+        logger.info(
+            "unsubscribe: removed {} subscriptions, {} remaining",
+            len(con_ids_to_remove), self.subscribed_count,
+        )
+
+        if self._event_hooked and not self._subscriptions:
+            self._ib.pendingTickersEvent -= self._on_pending_tickers
+            self._event_hooked = False
+            logger.debug("unsubscribe: pendingTickersEvent unhooked")
+
     # ------------------------------------------------------------------
     # Internal event handler
     # ------------------------------------------------------------------
