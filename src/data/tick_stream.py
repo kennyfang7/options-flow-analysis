@@ -375,7 +375,6 @@ class TickStream:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
     from src.connection.ibkr_client import IBKRClient
     from src.data.chain_fetcher import ChainFetcher
 
@@ -396,7 +395,7 @@ if __name__ == "__main__":
 
                 tick_count = 0
                 while tick_count < 10:
-                    tick = await _asyncio.wait_for(stream.queue.get(), timeout=30)
+                    tick = await asyncio.wait_for(stream.queue.get(), timeout=30)
                     tick_count += 1
                     logger.info(
                         "[{}] {} {} {} {:.0f} | bid={} ask={} last={} delta={} IV={:.1%}",
@@ -408,4 +407,4 @@ if __name__ == "__main__":
 
             logger.success("Smoke test complete.")
 
-    _asyncio.run(_main())
+    asyncio.run(_main())
