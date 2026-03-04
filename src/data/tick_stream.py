@@ -252,7 +252,9 @@ class TickStream:
             tickers: Set of Ticker objects updated in the last network packet.
         """
         for ticker in tickers:
-            con_id = ticker.contract.conId if ticker.contract else None
+            if not ticker.contract or not ticker.contract.conId:
+                continue
+            con_id = ticker.contract.conId
             if con_id not in self._subscriptions:
                 continue
 
