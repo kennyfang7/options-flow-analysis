@@ -46,3 +46,27 @@ def test_tick_stream_error_is_exception():
     err = TickStreamError("too many subscriptions")
     assert isinstance(err, Exception)
     assert str(err) == "too many subscriptions"
+
+
+# ---------------------------------------------------------------------------
+# TickStream skeleton tests
+# ---------------------------------------------------------------------------
+
+import asyncio
+from unittest.mock import MagicMock
+from src.data.tick_stream import TickStream
+
+
+def test_tick_stream_queue_is_asyncio_queue(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    assert isinstance(stream.queue, asyncio.Queue)
+
+
+def test_tick_stream_queue_maxsize(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    assert stream.queue.maxsize == 1000
+
+
+def test_tick_stream_subscribed_count_initial(mock_ibkr_client):
+    stream = TickStream(mock_ibkr_client)
+    assert stream.subscribed_count == 0

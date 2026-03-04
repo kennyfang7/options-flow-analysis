@@ -37,4 +37,17 @@ def mock_ib() -> MagicMock:
     # Simulate the ib_insync event as a simple list that supports +=
     ib.disconnectedEvent = MagicMock()
     ib.disconnectedEvent.__iadd__ = MagicMock(return_value=ib.disconnectedEvent)
+    ib.pendingTickersEvent = MagicMock()
+    ib.pendingTickersEvent.__iadd__ = MagicMock(return_value=ib.pendingTickersEvent)
+    ib.pendingTickersEvent.__isub__ = MagicMock(return_value=ib.pendingTickersEvent)
+    ib.reqMktData = MagicMock()
+    ib.cancelMktData = MagicMock()
     return ib
+
+
+@pytest.fixture
+def mock_ibkr_client(mock_ib, mock_settings) -> MagicMock:
+    """Mocked IBKRClient with a pre-configured mock IB instance."""
+    client = MagicMock()
+    client.ib = mock_ib
+    return client
