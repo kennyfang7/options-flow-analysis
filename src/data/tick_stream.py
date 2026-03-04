@@ -184,12 +184,15 @@ class TickStream:
             TickStreamError: If subscribing would exceed MAX_MKT_DATA_LINES, or if
                 adding the new contracts would exceed the limit.
         """
-        eligible = [c for c in contracts if c.con_id is not None]
-        skipped = len(contracts) - len(eligible)
-        if skipped:
-            logger.warning(
-                "subscribe: skipping {} contracts with no con_id", skipped
-            )
+        eligible = []
+        for c in contracts:
+            if c.con_id is None:
+                logger.warning(
+                    "subscribe: skipping {} {} {:.0f}{} — con_id is None",
+                    c.symbol, c.expiry, c.strike, c.right,
+                )
+            else:
+                eligible.append(c)
 
         new_count = len([c for c in eligible if c.con_id not in self._subscriptions])
         total_after = self.subscribed_count + new_count
