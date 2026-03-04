@@ -272,6 +272,24 @@ class TickStream:
             self._event_hooked = False
             logger.debug("unsubscribe: pendingTickersEvent unhooked")
 
+    async def __aenter__(self) -> TickStream:
+        """Return self — connection is managed by IBKRClient.
+
+        Returns:
+            This TickStream instance.
+        """
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Unsubscribe all active market data lines on exit.
+
+        Args:
+            exc_type: Exception type, if any.
+            exc_val: Exception value, if any.
+            exc_tb: Traceback, if any.
+        """
+        await self.unsubscribe()
+
     # ------------------------------------------------------------------
     # Internal event handler
     # ------------------------------------------------------------------

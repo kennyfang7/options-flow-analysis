@@ -292,3 +292,20 @@ async def test_unsubscribe_removes_event_hook_when_empty(mock_ibkr_client):
 
     mock_ibkr_client.ib.pendingTickersEvent.__isub__.assert_called_once()
     assert not stream._event_hooked
+
+
+# ---------------------------------------------------------------------------
+# Context manager tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_context_manager_auto_unsubscribes(mock_ibkr_client):
+    """__aexit__ should call unsubscribe() for all active subscriptions."""
+    async with TickStream(mock_ibkr_client) as stream:
+        stream._subscriptions[100] = (MagicMock(), None)
+        stream._active_tickers[100] = MagicMock()
+        stream._event_hooked = True
+
+    assert stream.subscribed_count == 0
+    mock_ibkr_client.ib.cancelMktData.assert_called_once()
