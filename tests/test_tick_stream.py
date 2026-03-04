@@ -129,3 +129,113 @@ async def test_subscribe_skips_contracts_without_con_id(mock_ibkr_client):
     await stream.subscribe([no_id])
     assert stream.subscribed_count == 0
     assert mock_ibkr_client.ib.reqMktData.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# _on_pending_tickers tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pending_tickers_puts_tick_in_queue(mock_ibkr_client):
+    """Fire the event handler directly and verify a TickUpdate lands in queue."""
+    from ib_insync import Option as IbOption
+
+    stream = TickStream(mock_ibkr_client)
+
+    contract = IbOption()
+    contract.conId = 12345
+    contract.symbol = "SPY"
+    contract.lastTradeDateOrContractMonth = "20260320"
+    contract.strike = 500.0
+    contract.right = "C"
+
+    ticker = MagicMock()
+    ticker.contract = contract
+    ticker.bid = 1.00
+    ticker.ask = 1.10
+    ticker.last = 1.05
+    ticker.volume = 500
+    ticker.lastSize = 10
+    ticker.bidSize = 50
+    ticker.askSize = 30
+    ticker.callOpenInterest = 1000
+    ticker.putOpenInterest = 0
+    ticker.modelGreeks = MagicMock()
+    ticker.modelGreeks.impliedVol = 0.25
+    ticker.modelGreeks.delta = 0.45
+    ticker.modelGreeks.gamma = 0.02
+    ticker.modelGreeks.theta = -0.05
+    ticker.modelGreeks.vega = 0.10
+
+    stream._subscriptions[12345] = (MagicMock(), 500.0)
+
+    stream._on_pending_tickers({ticker})
+
+    assert not stream.queue.empty()
+    tick: TickUpdate = stream.queue.get_nowait()
+    assert tick.symbol == "SPY"
+    assert tick.con_id == 12345
+    assert tick.bid == 1.00
+    assert tick.ask == 1.10
+    assert tick.mid == 1.05
+    assert tick.last_size == 10
+    assert tick.underlying_price == 500.0
+    assert tick.delta == 0.45
+    assert tick.implied_vol == 0.25
+
+
+@pytest.mark.asyncio
+async def test_pending_tickers_drops_unknown_contract(mock_ibkr_client):
+    """Tickers not in _subscriptions are silently skipped."""
+    from ib_insync import Option as IbOption
+
+    stream = TickStream(mock_ibkr_client)
+
+    contract = IbOption()
+    contract.conId = 99999  # Not in _subscriptions
+
+    ticker = MagicMock()
+    ticker.contract = contract
+    ticker.modelGreeks = None
+
+    stream._on_pending_tickers({ticker})
+    assert stream.queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_pending_tickers_drops_on_queue_full(mock_ibkr_client):
+    """When queue is full, ticks are dropped with a warning — no crash."""
+    from ib_insync import Option as IbOption
+
+    stream = TickStream(mock_ibkr_client)
+
+    contract = IbOption()
+    contract.conId = 12345
+    contract.symbol = "SPY"
+    contract.lastTradeDateOrContractMonth = "20260320"
+    contract.strike = 500.0
+    contract.right = "C"
+
+    ticker = MagicMock()
+    ticker.contract = contract
+    ticker.bid = 1.0
+    ticker.ask = 1.1
+    ticker.last = 1.05
+    ticker.volume = 100
+    ticker.lastSize = 1
+    ticker.bidSize = 10
+    ticker.askSize = 10
+    ticker.callOpenInterest = 500
+    ticker.putOpenInterest = 0
+    ticker.modelGreeks = None
+
+    stream._subscriptions[12345] = (MagicMock(), None)
+
+    # Fill the queue to capacity
+    for _ in range(stream.queue.maxsize):
+        stream.queue.put_nowait(MagicMock())
+
+    # This should NOT raise — logs warning and drops tick
+    stream._on_pending_tickers({ticker})
+    assert stream.queue.full()

@@ -237,13 +237,79 @@ class TickStream:
             self.subscribed_count, new_count,
         )
 
-    def _on_pending_tickers(self, tickers: set) -> None:
-        """Handle pendingTickersEvent from ib_insync.
+    # ------------------------------------------------------------------
+    # Internal event handler
+    # ------------------------------------------------------------------
 
-        Stub — full implementation in Task 4 (tick processing pipeline).
+    def _on_pending_tickers(self, tickers: set[Ticker]) -> None:
+        """Handle the pendingTickersEvent fired by ib_insync.
+
+        Called on the ib_insync event loop — MUST NOT await anything.
+        Converts each updated Ticker to a TickUpdate and puts it in the queue.
+        Drops ticks (with a warning) when the queue is full.
 
         Args:
-            tickers: Set of ib_insync.Ticker objects with fresh data.
+            tickers: Set of Ticker objects updated in the last network packet.
         """
-        # Implemented in Task 4.
-        pass
+        for ticker in tickers:
+            con_id = ticker.contract.conId if ticker.contract else None
+            if con_id not in self._subscriptions:
+                continue
+
+            _, underlying_price = self._subscriptions[con_id]
+            update = self._ticker_to_update(ticker, underlying_price)
+            if update is None:
+                continue
+
+            try:
+                self._queue.put_nowait(update)
+            except asyncio.QueueFull:
+                logger.warning(
+                    "_on_pending_tickers: queue full (maxsize={}), dropping tick for con_id={}",
+                    QUEUE_MAXSIZE, con_id,
+                )
+
+    def _ticker_to_update(
+        self, ticker: Ticker, underlying_price: float | None
+    ) -> TickUpdate | None:
+        """Convert a raw ib_insync Ticker to a TickUpdate domain object.
+
+        Args:
+            ticker: Raw Ticker from pendingTickersEvent.
+            underlying_price: Underlying price stored at subscription time.
+
+        Returns:
+            TickUpdate, or None if the contract has no conId.
+        """
+        c = ticker.contract
+        if not c or not c.conId:
+            return None
+
+        greeks = ticker.modelGreeks
+        right = getattr(c, "right", "C")
+
+        return TickUpdate(
+            symbol=c.symbol,
+            con_id=c.conId,
+            expiry=c.lastTradeDateOrContractMonth,
+            strike=c.strike,
+            right=right,
+            timestamp=datetime.now(timezone.utc),
+            bid=_clean(getattr(ticker, "bid", None)),
+            ask=_clean(getattr(ticker, "ask", None)),
+            last=_clean(getattr(ticker, "last", None)),
+            volume=_clean_int(getattr(ticker, "volume", None)),
+            open_interest=_clean_int(
+                getattr(ticker, "callOpenInterest", None) if right == "C"
+                else getattr(ticker, "putOpenInterest", None)
+            ),
+            last_size=_clean_int(getattr(ticker, "lastSize", None)),
+            bid_size=_clean_int(getattr(ticker, "bidSize", None)),
+            ask_size=_clean_int(getattr(ticker, "askSize", None)),
+            underlying_price=underlying_price,
+            implied_vol=_clean(greeks.impliedVol) if greeks else None,
+            delta=_clean(greeks.delta) if greeks else None,
+            gamma=_clean(greeks.gamma) if greeks else None,
+            theta=_clean(greeks.theta) if greeks else None,
+            vega=_clean(greeks.vega) if greeks else None,
+        )
