@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from ib_insync import Option, Ticker
 from loguru import logger
 from pydantic import BaseModel, computed_field
 
+from src.data.chain_fetcher import _clean, _clean_int  # shared IBKR sentinel helpers
+
 if TYPE_CHECKING:
+    from ib_insync import Option, Ticker
     from src.connection.ibkr_client import IBKRClient
     from src.data.chain_fetcher import OptionContract
 
@@ -25,25 +26,6 @@ class TickStreamError(Exception):
 # ---------------------------------------------------------------------------
 # Domain model
 # ---------------------------------------------------------------------------
-
-def _clean(value: float | None, sentinel: float = -1.0) -> float | None:
-    """Normalize IBKR sentinel values (nan, -1) to None."""
-    if value is None:
-        return None
-    try:
-        if math.isnan(value):
-            return None
-    except TypeError:
-        return None
-    if value == sentinel:
-        return None
-    return value
-
-
-def _clean_int(value: float | None) -> int | None:
-    """Normalize an IBKR integer field to int or None."""
-    cleaned = _clean(value)
-    return int(cleaned) if cleaned is not None else None
 
 
 class TickUpdate(BaseModel):
