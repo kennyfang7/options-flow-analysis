@@ -95,3 +95,48 @@ async def insert_tick(session: AsyncSession, tick: TickUpdate) -> int:
     session.add(db_tick)
     await session.flush()
     return db_tick.id
+
+
+async def get_latest_snapshot(
+    session: AsyncSession, underlying: str
+) -> ChainSnapshot | None:
+    """Fetch the most recent chain snapshot for a given underlying.
+
+    Args:
+        session: Active AsyncSession.
+        underlying: Ticker symbol, e.g. "SPY".
+
+    Returns:
+        The most recent ChainSnapshot row, or None if none exist.
+    """
+    result = await session.execute(
+        select(ChainSnapshot)
+        .where(ChainSnapshot.underlying == underlying)
+        .order_by(ChainSnapshot.captured_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_recent_ticks(
+    session: AsyncSession, con_id: int, minutes: int = 1
+) -> list[OptionTick]:
+    """Fetch tick records for a contract within the last N minutes.
+
+    Used by flow_classifier to retrieve recent activity for a contract.
+
+    Args:
+        session: Active AsyncSession.
+        con_id: IBKR contract ID to filter by.
+        minutes: Lookback window in minutes (default 1).
+
+    Returns:
+        List of OptionTick rows ordered by received_at ascending.
+    """
+    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    result = await session.execute(
+        select(OptionTick)
+        .where(OptionTick.con_id == con_id, OptionTick.received_at >= since)
+        .order_by(OptionTick.received_at.asc())
+    )
+    return list(result.scalars().all())

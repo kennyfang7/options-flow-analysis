@@ -297,3 +297,64 @@ async def test_insert_tick_none_fields_stored_as_null(async_db_session):
     assert record.bid is None
     assert record.delta is None
     assert record.last_size is None
+
+
+async def test_get_latest_snapshot_returns_most_recent(async_db_session):
+    from datetime import datetime, timezone, timedelta
+    from src.data.chain_fetcher import OptionChainSnapshot
+    from src.storage.queries import insert_chain_snapshot, get_latest_snapshot
+
+    older = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=490.0,
+        timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
+        contracts=[],
+    )
+    newer = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[],
+    )
+    await insert_chain_snapshot(async_db_session, older)
+    await insert_chain_snapshot(async_db_session, newer)
+
+    result = await get_latest_snapshot(async_db_session, "SPY")
+    assert result is not None
+    assert result.underlying_price == 500.0
+
+
+async def test_get_latest_snapshot_returns_none_for_unknown(async_db_session):
+    from src.storage.queries import get_latest_snapshot
+
+    result = await get_latest_snapshot(async_db_session, "UNKNOWN")
+    assert result is None
+
+
+async def test_get_recent_ticks_returns_within_window(async_db_session):
+    from datetime import datetime, timezone, timedelta
+    from src.data.tick_stream import TickUpdate
+    from src.storage.queries import insert_tick, get_recent_ticks
+
+    now = datetime.now(timezone.utc)
+    recent = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=now, bid=1.0, ask=1.05,
+    )
+    old = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=now - timedelta(hours=2), bid=0.9, ask=0.95,
+    )
+    await insert_tick(async_db_session, recent)
+    await insert_tick(async_db_session, old)
+
+    results = await get_recent_ticks(async_db_session, con_id=12345, minutes=5)
+    assert len(results) == 1
+    assert results[0].bid == 1.0
+
+
+async def test_get_recent_ticks_returns_empty_for_no_matches(async_db_session):
+    from src.storage.queries import get_recent_ticks
+
+    results = await get_recent_ticks(async_db_session, con_id=99999, minutes=5)
+    assert results == []
