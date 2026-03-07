@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +36,11 @@ async def insert_chain_snapshot(
 
     for c in snapshot.contracts:
         if c.con_id is None:
-            continue  # skip unqualified contracts (see models.py comment on con_id)
+            logger.debug(
+                "insert_chain_snapshot: skipping unqualified contract {} {} {:.0f}{} (con_id is None)",
+                c.symbol, c.expiry, c.strike, c.right,
+            )
+            continue
         session.add(
             OptionContractRecord(
                 snapshot_id=db_snapshot.id,
@@ -133,7 +138,9 @@ async def get_recent_ticks(
     Returns:
         List of OptionTick rows ordered by received_at ascending.
     """
-    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    # SQLite stores DateTime as naive UTC strings; strip tzinfo for compatibility.
+    # When migrating to PostgreSQL (which preserves tzinfo), revisit this.
+    since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).replace(tzinfo=None)
     result = await session.execute(
         select(OptionTick)
         .where(OptionTick.con_id == con_id, OptionTick.received_at >= since)
