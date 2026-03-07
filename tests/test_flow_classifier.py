@@ -36,3 +36,9 @@ def test_settings_min_premium_positive_is_valid():
     """Settings accepts any positive min_premium."""
     s = Settings(min_premium=1.0)
     assert s.min_premium == 1.0
+
+
+def test_settings_aggressor_thresholds_must_be_ordered():
+    """Settings raises ValidationError when buy threshold <= sell threshold."""
+    with pytest.raises(ValidationError, match="aggressor_buy_threshold must be greater than aggressor_sell_threshold"):
+        Settings(aggressor_buy_threshold=0.30, aggressor_sell_threshold=0.70)

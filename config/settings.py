@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -82,6 +82,15 @@ class Settings(BaseSettings):
         if v <= 0:
             raise ValueError("min_premium must be greater than 0")
         return v
+
+    @model_validator(mode="after")
+    def aggressor_thresholds_are_ordered(self) -> Settings:
+        """Ensure buy threshold > sell threshold to prevent inverted classifier logic."""
+        if self.aggressor_buy_threshold <= self.aggressor_sell_threshold:
+            raise ValueError(
+                "aggressor_buy_threshold must be greater than aggressor_sell_threshold"
+            )
+        return self
 
 
 # Single shared instance — import this everywhere
