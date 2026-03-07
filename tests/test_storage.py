@@ -61,3 +61,9 @@ def test_chain_snapshots_has_underlying_index():
     from src.storage.models import ChainSnapshot
     index_names = {i.name for i in ChainSnapshot.__table__.indexes}
     assert "ix_chain_snapshots_underlying_captured_at" in index_names
+
+
+def test_option_ticks_has_symbol_index():
+    from src.storage.models import OptionTick
+    index_names = {i.name for i in OptionTick.__table__.indexes}
+    assert "ix_option_ticks_symbol_received_at" in index_names

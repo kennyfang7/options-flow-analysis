@@ -25,7 +25,7 @@ class ChainSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     underlying: Mapped[str] = mapped_column(String, nullable=False)
     underlying_price: Mapped[float] = mapped_column(Float, nullable=False)
-    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # maps from OptionChainSnapshot.timestamp
 
     contracts: Mapped[list[OptionContractRecord]] = relationship(
         "OptionContractRecord", back_populates="snapshot", cascade="all, delete-orphan"
@@ -52,6 +52,7 @@ class OptionContractRecord(Base):
     expiry: Mapped[str] = mapped_column(String, nullable=False)
     strike: Mapped[float] = mapped_column(Float, nullable=False)
     right: Mapped[str] = mapped_column(String(1), nullable=False)
+    # NULL con_ids bypass the unique constraint — insert layer must skip None con_ids
     con_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     bid: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -76,6 +77,8 @@ class OptionTick(Base):
 
     Stores raw streaming tick data for downstream analysis (flow_classifier,
     unusual_detector, etc.). Note: 'mid' is intentionally omitted.
+    Intentionally has no foreign key to option_contracts — ticks can arrive
+    for contracts not yet captured in a chain snapshot.
     """
 
     __tablename__ = "option_ticks"
@@ -90,7 +93,7 @@ class OptionTick(Base):
     expiry: Mapped[str] = mapped_column(String, nullable=False)
     strike: Mapped[float] = mapped_column(Float, nullable=False)
     right: Mapped[str] = mapped_column(String(1), nullable=False)
-    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # maps from TickUpdate.timestamp
 
     bid: Mapped[float | None] = mapped_column(Float, nullable=True)
     ask: Mapped[float | None] = mapped_column(Float, nullable=True)
