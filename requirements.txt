@@ -8,6 +8,8 @@ numpy>=1.26.0
 # Storage
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL (prod)
+aiosqlite>=0.20.0       # async SQLite driver (dev)
+asyncpg>=0.29.0         # async PostgreSQL driver (prod)
 
 # Visualization / Dashboard
 plotly>=5.20.0
