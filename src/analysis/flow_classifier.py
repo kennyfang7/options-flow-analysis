@@ -135,7 +135,12 @@ def _sizes_within_tolerance(
     sizes = [t.last_size for t, _ in entries if t.last_size is not None]
     if not sizes:
         return False
-    median = sorted(sizes)[len(sizes) // 2]
+    sorted_sizes = sorted(sizes)
+    n = len(sorted_sizes)
+    if n % 2 == 1:
+        median: float = sorted_sizes[n // 2]
+    else:
+        median = (sorted_sizes[(n - 1) // 2] + sorted_sizes[n // 2]) / 2.0
     if median == 0:
         return False
     return all(abs(s - median) / median <= tol for s in sizes)
@@ -241,7 +246,14 @@ class FlowClassifier:
         elif tick.mid is not None:
             effective_price = tick.mid
         else:
-            # bid or ask missing — use last directly as best available price
+            # bid or ask missing — use last directly as best available price.
+            # WARNING: tick.last may be stale (previous session). Premium
+            # computed here could be inaccurate. Logged for observability.
+            logger.debug(
+                "classify: using raw last={} as effective_price for con_id={} "
+                "(bid={} ask={} unavailable)",
+                last, con_id, bid, ask,
+            )
             effective_price = last
 
         premium = tick.last_size * effective_price * 100
