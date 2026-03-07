@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_chain_snapshot_tablename():
     from src.storage.models import ChainSnapshot
@@ -106,7 +108,6 @@ async def test_get_session_yields_async_session():
 
 
 async def test_get_session_rollbacks_on_exception():
-    import pytest
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
     from src.storage.db import init_db, get_session
 
