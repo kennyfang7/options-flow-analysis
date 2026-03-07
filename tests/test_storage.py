@@ -379,3 +379,35 @@ def test_storage_package_exports():
         insert_chain_snapshot, insert_tick,
         get_latest_snapshot, get_recent_ticks,
     ])
+
+
+async def test_classified_trade_record_insert(async_db_session):
+    """ClassifiedTradeRecord inserts and reads back correctly."""
+    from datetime import datetime
+    from src.storage.models import ClassifiedTradeRecord
+
+    record = ClassifiedTradeRecord(
+        con_id=12345,
+        symbol="SPY",
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        underlying_price=500.0,
+        implied_vol=0.25,
+        delta=0.45,
+        trade_type="block",
+        aggressor="buy",
+        spread_position=0.90,
+        effective_price=2.45,
+        last_size=600,
+        premium=147000.0,
+        signal_strength=3.5,
+        volume_delta=600,
+        window_ticks=1,
+        classified_at=datetime(2026, 3, 7, 14, 30, 0),
+    )
+    async_db_session.add(record)
+    await async_db_session.flush()
+    assert record.id is not None
+    assert record.trade_type == "block"
+    assert record.symbol == "SPY"

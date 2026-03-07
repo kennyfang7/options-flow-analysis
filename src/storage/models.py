@@ -72,6 +72,7 @@ class OptionContractRecord(Base):
     )
 
 
+
 class OptionTick(Base):
     """One row per TickUpdate received from TickStream.queue.
 
@@ -110,3 +111,46 @@ class OptionTick(Base):
     gamma: Mapped[float | None] = mapped_column(Float, nullable=True)
     theta: Mapped[float | None] = mapped_column(Float, nullable=True)
     vega: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class ClassifiedTradeRecord(Base):
+    """One row per ClassifiedTrade emitted by FlowClassifier.
+
+    Persisted by the orchestration layer via insert_classified_trade().
+    The 'tick' field from ClassifiedTrade is intentionally omitted —
+    raw tick data lives in option_ticks; this table stores the derived result.
+
+    trade_type and aggressor are stored as plain strings (enum values)
+    for SQLite compatibility. PostgreSQL migration can use native enums.
+    classified_at maps from ClassifiedTrade.timestamp (when trade occurred,
+    not when classify() ran).
+    """
+
+    __tablename__ = "classified_trades"
+    __table_args__ = (
+        Index("ix_classified_trades_symbol_at", "symbol", "classified_at"),
+        Index("ix_classified_trades_con_id_at", "con_id", "classified_at"),
+        Index("ix_classified_trades_symbol_aggressor_at", "symbol", "aggressor", "classified_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    expiry: Mapped[str] = mapped_column(String, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    right: Mapped[str] = mapped_column(String(1), nullable=False)
+
+    underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    implied_vol: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    trade_type: Mapped[str] = mapped_column(String, nullable=False)
+    aggressor: Mapped[str] = mapped_column(String, nullable=False)
+    spread_position: Mapped[float | None] = mapped_column(Float, nullable=True)
+    effective_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    premium: Mapped[float | None] = mapped_column(Float, nullable=True)
+    signal_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_ticks: Mapped[int] = mapped_column(Integer, nullable=False)
+    classified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
