@@ -208,3 +208,92 @@ async def test_insert_chain_snapshot_skips_none_con_id(async_db_session):
     records = result.scalars().all()
     assert len(records) == 1  # only the qualified one
     assert records[0].con_id == 99999
+
+
+async def test_insert_tick_returns_id(async_db_session):
+    from datetime import datetime, timezone
+    from src.data.tick_stream import TickUpdate
+    from src.storage.queries import insert_tick
+
+    tick = TickUpdate(
+        symbol="SPY",
+        con_id=12345,
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=1.0,
+        ask=1.05,
+        last=1.02,
+        last_size=10,
+        underlying_price=500.0,
+    )
+    tick_id = await insert_tick(async_db_session, tick)
+    assert isinstance(tick_id, int)
+    assert tick_id > 0
+
+
+async def test_insert_tick_persists_all_fields(async_db_session):
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.data.tick_stream import TickUpdate
+    from src.storage.models import OptionTick
+    from src.storage.queries import insert_tick
+
+    tick = TickUpdate(
+        symbol="SPY",
+        con_id=12345,
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=1.0,
+        ask=1.05,
+        last=1.02,
+        last_size=10,
+        bid_size=50,
+        ask_size=30,
+        underlying_price=500.0,
+        delta=0.5,
+        implied_vol=0.25,
+    )
+    await insert_tick(async_db_session, tick)
+
+    result = await async_db_session.execute(
+        select(OptionTick).where(OptionTick.con_id == 12345)
+    )
+    record = result.scalar_one()
+    assert record.symbol == "SPY"
+    assert record.last_size == 10
+    assert record.bid_size == 50
+    assert record.ask_size == 30
+    assert record.underlying_price == 500.0
+    assert record.delta == 0.5
+    assert record.implied_vol == 0.25
+
+
+async def test_insert_tick_none_fields_stored_as_null(async_db_session):
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.data.tick_stream import TickUpdate
+    from src.storage.models import OptionTick
+    from src.storage.queries import insert_tick
+
+    tick = TickUpdate(
+        symbol="AAPL",
+        con_id=99999,
+        expiry="20260320",
+        strike=200.0,
+        right="P",
+        timestamp=datetime.now(timezone.utc),
+        # all optional fields left as None
+    )
+    await insert_tick(async_db_session, tick)
+
+    result = await async_db_session.execute(
+        select(OptionTick).where(OptionTick.con_id == 99999)
+    )
+    record = result.scalar_one()
+    assert record.bid is None
+    assert record.delta is None
+    assert record.last_size is None

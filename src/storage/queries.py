@@ -58,3 +58,40 @@ async def insert_chain_snapshot(
         )
 
     return db_snapshot.id
+
+
+async def insert_tick(session: AsyncSession, tick: TickUpdate) -> int:
+    """Persist one TickUpdate from the live stream.
+
+    Args:
+        session: Active AsyncSession (caller manages commit/rollback).
+        tick: The pydantic TickUpdate received from TickStream.queue.
+
+    Returns:
+        The auto-generated primary key of the new option_ticks row.
+    """
+    db_tick = OptionTick(
+        symbol=tick.symbol,
+        con_id=tick.con_id,
+        expiry=tick.expiry,
+        strike=tick.strike,
+        right=tick.right,
+        received_at=tick.timestamp,  # TickUpdate.timestamp → received_at
+        bid=tick.bid,
+        ask=tick.ask,
+        last=tick.last,
+        volume=tick.volume,
+        open_interest=tick.open_interest,
+        last_size=tick.last_size,
+        bid_size=tick.bid_size,
+        ask_size=tick.ask_size,
+        underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol,
+        delta=tick.delta,
+        gamma=tick.gamma,
+        theta=tick.theta,
+        vega=tick.vega,
+    )
+    session.add(db_tick)
+    await session.flush()
+    return db_tick.id
