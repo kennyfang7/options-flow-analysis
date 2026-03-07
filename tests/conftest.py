@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config.settings import Settings
+from src.storage.models import Base
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -51,3 +54,19 @@ def mock_ibkr_client(mock_ib, mock_settings) -> MagicMock:
     client = MagicMock()
     client.ib = mock_ib
     return client
+
+
+@pytest_asyncio.fixture
+async def async_db_session() -> AsyncSession:
+    """In-memory SQLite session for storage tests.
+
+    Creates all tables fresh for each test, yields the session,
+    then disposes the engine. Tests are fully isolated.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
