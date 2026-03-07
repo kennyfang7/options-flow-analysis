@@ -67,3 +67,55 @@ def test_option_ticks_has_symbol_index():
     from src.storage.models import OptionTick
     index_names = {i.name for i in OptionTick.__table__.indexes}
     assert "ix_option_ticks_symbol_received_at" in index_names
+
+
+async def test_init_db_creates_tables():
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
+    from src.storage.db import init_db
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    await init_db(engine=engine)
+
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")
+        )
+        tables = {row[0] for row in result}
+
+    await engine.dispose()
+    assert "chain_snapshots" in tables
+    assert "option_contracts" in tables
+    assert "option_ticks" in tables
+
+
+async def test_get_session_yields_async_session():
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession, create_async_engine, async_sessionmaker
+    )
+    from src.storage.db import init_db, get_session
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    await init_db(engine=engine)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with get_session(session_factory=factory) as session:
+        assert isinstance(session, AsyncSession)
+
+    await engine.dispose()
+
+
+async def test_get_session_rollbacks_on_exception():
+    import pytest
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from src.storage.db import init_db, get_session
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    await init_db(engine=engine)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    with pytest.raises(ValueError, match="test error"):
+        async with get_session(session_factory=factory) as _session:
+            raise ValueError("test error")
+
+    await engine.dispose()
