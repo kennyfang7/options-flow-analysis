@@ -358,3 +358,24 @@ async def test_get_recent_ticks_returns_empty_for_no_matches(async_db_session):
 
     results = await get_recent_ticks(async_db_session, con_id=99999, minutes=5)
     assert results == []
+
+
+def test_storage_package_exports():
+    from src.storage import (
+        Base,
+        ChainSnapshot,
+        OptionContractRecord,
+        OptionTick,
+        get_session,
+        init_db,
+        insert_chain_snapshot,
+        insert_tick,
+        get_latest_snapshot,
+        get_recent_ticks,
+    )
+    assert all([
+        Base, ChainSnapshot, OptionContractRecord, OptionTick,
+        get_session, init_db,
+        insert_chain_snapshot, insert_tick,
+        get_latest_snapshot, get_recent_ticks,
+    ])
