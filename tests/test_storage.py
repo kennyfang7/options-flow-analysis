@@ -120,3 +120,91 @@ async def test_get_session_rollbacks_on_exception():
             raise ValueError("test error")
 
     await engine.dispose()
+
+
+async def test_insert_chain_snapshot_returns_id(async_db_session):
+    from datetime import datetime, timezone
+    from src.data.chain_fetcher import OptionChainSnapshot
+    from src.storage.queries import insert_chain_snapshot
+
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[],
+    )
+    snapshot_id = await insert_chain_snapshot(async_db_session, snapshot)
+    assert isinstance(snapshot_id, int)
+    assert snapshot_id > 0
+
+
+async def test_insert_chain_snapshot_persists_contracts(async_db_session):
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.models import OptionContractRecord
+    from src.storage.queries import insert_chain_snapshot
+
+    contract = OptionContract(
+        symbol="SPY",
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        con_id=12345,
+        bid=1.0,
+        ask=1.05,
+        delta=0.5,
+        implied_vol=0.25,
+    )
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[contract],
+    )
+    snapshot_id = await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await async_db_session.execute(
+        select(OptionContractRecord).where(
+            OptionContractRecord.snapshot_id == snapshot_id
+        )
+    )
+    records = result.scalars().all()
+    assert len(records) == 1
+    assert records[0].symbol == "SPY"
+    assert records[0].con_id == 12345
+    assert records[0].bid == 1.0
+    assert records[0].delta == 0.5
+
+
+async def test_insert_chain_snapshot_skips_none_con_id(async_db_session):
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.models import OptionContractRecord
+    from src.storage.queries import insert_chain_snapshot
+
+    unqualified = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="C",
+        con_id=None,  # no con_id — should be skipped
+    )
+    qualified = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="P",
+        con_id=99999,
+    )
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[unqualified, qualified],
+    )
+    snapshot_id = await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await async_db_session.execute(
+        select(OptionContractRecord).where(
+            OptionContractRecord.snapshot_id == snapshot_id
+        )
+    )
+    records = result.scalars().all()
+    assert len(records) == 1  # only the qualified one
+    assert records[0].con_id == 99999
