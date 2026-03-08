@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from loguru import logger
@@ -207,8 +208,6 @@ async def insert_unusual_signal(
     Returns:
         The auto-generated primary key of the new unusual_signals row.
     """
-    import json
-
     record = UnusualSignalRecord(
         con_id=signal.con_id,
         symbol=signal.symbol,
