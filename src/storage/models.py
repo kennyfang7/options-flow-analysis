@@ -154,3 +154,47 @@ class ClassifiedTradeRecord(Base):
     volume_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     window_ticks: Mapped[int] = mapped_column(Integer, nullable=False)
     classified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class UnusualSignalRecord(Base):
+    """One row per UnusualSignal emitted by UnusualDetector.
+
+    Persisted by the orchestration layer via insert_unusual_signal().
+    trade_type, aggressor, top_reason stored as plain strings (enum values)
+    for SQLite compatibility.
+    reasons stored as a JSON array string, e.g. '["premium_size","oi_ratio"]'.
+
+    classified_at = trade.timestamp (when the originating trade occurred).
+    flagged_at = when UnusualDetector.detect() was called.
+    No FK to classified_trades — consistent with project pattern (avoids
+    persistence ordering constraint; join on (con_id, classified_at) instead).
+    """
+
+    __tablename__ = "unusual_signals"
+    __table_args__ = (
+        Index("ix_unusual_signals_symbol_flagged_at", "symbol", "flagged_at"),
+        Index("ix_unusual_signals_con_id_flagged_at", "con_id", "flagged_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    con_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    expiry: Mapped[str] = mapped_column(String, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    right: Mapped[str] = mapped_column(String(1), nullable=False)
+
+    underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    implied_vol: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    effective_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    trade_type: Mapped[str] = mapped_column(String, nullable=False)     # TradeType.value
+    aggressor: Mapped[str] = mapped_column(String, nullable=False)       # Aggressor.value
+    premium: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    signal_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    top_reason: Mapped[str] = mapped_column(String, nullable=False)     # UnusualReason.value
+    reasons: Mapped[str] = mapped_column(String, nullable=False)        # JSON array
+    classified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    flagged_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

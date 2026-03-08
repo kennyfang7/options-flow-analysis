@@ -480,3 +480,37 @@ async def test_classified_trade_record_insert(async_db_session):
     assert record.id is not None
     assert record.trade_type == "block"
     assert record.symbol == "SPY"
+
+
+@pytest.mark.asyncio
+async def test_unusual_signal_record_insert(async_db_session):
+    """UnusualSignalRecord inserts and reads back correctly."""
+    import json
+    from datetime import datetime
+    from src.storage.models import UnusualSignalRecord
+
+    record = UnusualSignalRecord(
+        con_id=12345,
+        symbol="SPY",
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        underlying_price=500.0,
+        implied_vol=0.25,
+        delta=0.20,
+        effective_price=2.45,
+        trade_type="block",
+        aggressor="buy",
+        premium=600.0,
+        volume_delta=60,
+        signal_strength=1.0,
+        top_reason="premium_size",
+        reasons=json.dumps(["premium_size"]),
+        classified_at=datetime(2026, 3, 8, 14, 30, 0),
+        flagged_at=datetime(2026, 3, 8, 14, 30, 1),
+    )
+    async_db_session.add(record)
+    await async_db_session.flush()
+    assert record.id is not None
+    assert record.top_reason == "premium_size"
+    assert json.loads(record.reasons) == ["premium_size"]
