@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from config.settings import Settings
 from src.analysis.flow_classifier import Aggressor, ClassifiedTrade, TradeType
-
-if TYPE_CHECKING:
-    from config.settings import Settings
 
 
 # ---------------------------------------------------------------------------
@@ -101,3 +98,171 @@ class UnusualSignal(BaseModel):
 
     # Full trade in-memory; excluded from serialization
     trade: ClassifiedTrade = Field(exclude=True)
+
+
+# ---------------------------------------------------------------------------
+# UnusualDetector
+# ---------------------------------------------------------------------------
+
+_PRIORITY = [
+    UnusualReason.PREMIUM_SIZE,
+    UnusualReason.OI_RATIO,
+    UnusualReason.SIGNAL_STRENGTH,
+    UnusualReason.OTM_PREMIUM,
+]
+
+
+class UnusualDetector:
+    """Threshold-based filter for unusual options activity.
+
+    Maintains a lightweight OI cache (dict[int, int]) to persist the last-known
+    open interest per contract. IBKR sends OI as a separate, infrequent tick type;
+    without caching, the OI_RATIO check would be silently skipped on most ticks.
+
+    detect() is async to accommodate future DB-backed statistical baselines.
+    The current implementation performs no IO — safe to await on the hot path.
+
+    The orchestration layer MUST call purge_stale() periodically (e.g. hourly)
+    to evict state for contracts no longer being tracked.
+
+    Note: The OI cache can be seeded at startup from the most recent ChainSnapshot
+    via get_latest_snapshot(). This is the orchestration layer's responsibility.
+
+    Example:
+        settings = Settings()
+        detector = UnusualDetector(settings)
+
+        async for trade in classified_stream:
+            signal = await detector.detect(trade)
+            if signal:
+                await insert_unusual_signal(session, signal)
+
+    Args:
+        settings: Application settings with detection thresholds.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._oi_cache: dict[int, int] = {}
+        self._last_seen: dict[int, datetime] = {}
+
+    async def detect(self, trade: ClassifiedTrade) -> UnusualSignal | None:
+        """Evaluate a ClassifiedTrade against unusual activity thresholds.
+
+        Updates the OI cache when trade.tick.open_interest is available.
+        Evaluates four independent threshold conditions. Returns an UnusualSignal
+        if any condition fires, otherwise None.
+
+        MULTI_LEG trades are skipped — premium and delta semantics differ
+        for multi-leg strategies. Revisit when MULTI_LEG detection is built.
+
+        Args:
+            trade: ClassifiedTrade from FlowClassifier.classify().
+
+        Returns:
+            UnusualSignal if one or more conditions fired, else None.
+        """
+        s = self._settings
+        con_id = trade.con_id
+
+        # Skip MULTI_LEG — detection not yet implemented
+        if trade.trade_type == TradeType.MULTI_LEG:
+            return None
+
+        # Update OI cache and last-seen timestamp.
+        # Use trade.timestamp (tick receipt time) rather than wall-clock now so
+        # that purge_stale() correctly evicts entries for old or replayed ticks.
+        self._last_seen[con_id] = trade.timestamp
+        if trade.tick.open_interest is not None:
+            if con_id not in self._oi_cache:
+                logger.debug(
+                    "unusual_detector: OI cache populated for con_id={} oi={}",
+                    con_id, trade.tick.open_interest,
+                )
+            self._oi_cache[con_id] = trade.tick.open_interest
+
+        oi = self._oi_cache.get(con_id)
+        reasons: list[UnusualReason] = []
+
+        # 1. PREMIUM_SIZE — absolute dollar commitment
+        if trade.premium is not None and trade.premium >= s.unusual_premium_threshold:
+            reasons.append(UnusualReason.PREMIUM_SIZE)
+
+        # 2. OI_RATIO — fraction of all open positions in one print
+        if oi is not None and oi > 0 and trade.volume_delta > 0:
+            if trade.volume_delta / oi >= s.unusual_oi_ratio_threshold:
+                reasons.append(UnusualReason.OI_RATIO)
+
+        # 3. SIGNAL_STRENGTH — composite score from flow classifier
+        if trade.signal_strength is not None and trade.signal_strength >= s.unusual_signal_threshold:
+            reasons.append(UnusualReason.SIGNAL_STRENGTH)
+
+        # 4. OTM_PREMIUM — large bet on a far OTM contract
+        # delta=None when IBKR has not yet populated Greeks — skip silently
+        if (
+            trade.delta is not None
+            and abs(trade.delta) <= s.otm_delta_threshold
+            and trade.premium is not None
+            and trade.premium >= s.otm_premium_threshold
+        ):
+            reasons.append(UnusualReason.OTM_PREMIUM)
+
+        if not reasons:
+            return None
+
+        top_reason = next(r for r in _PRIORITY if r in reasons)
+
+        logger.info(
+            "unusual_detector: {} {} | top={} reasons={} premium=${:.0f}",
+            trade.symbol,
+            trade.trade_type.value,
+            top_reason.value,
+            [r.value for r in reasons],
+            trade.premium or 0,
+        )
+
+        return UnusualSignal(
+            symbol=trade.symbol,
+            con_id=trade.con_id,
+            expiry=trade.expiry,
+            right=trade.right,
+            strike=trade.strike,
+            trade_type=trade.trade_type,
+            aggressor=trade.aggressor,
+            premium=trade.premium,
+            volume_delta=trade.volume_delta,
+            signal_strength=trade.signal_strength,
+            delta=trade.delta,
+            underlying_price=trade.underlying_price,
+            implied_vol=trade.implied_vol,
+            effective_price=trade.effective_price,
+            reasons=reasons,
+            top_reason=top_reason,
+            flagged_at=datetime.now(timezone.utc),
+            trade=trade,
+        )
+
+    def purge_stale(self, max_age_seconds: float = 3600.0) -> int:
+        """Evict OI cache entries for contracts not seen in max_age_seconds.
+
+        Matches FlowClassifier.purge_stale() signature for a consistent
+        orchestration layer call pattern across all analysis modules.
+
+        Args:
+            max_age_seconds: Contracts with no detect() calls newer than
+                this threshold are evicted from both caches.
+
+        Returns:
+            Number of con_ids evicted.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        stale = [
+            con_id for con_id, last_seen in self._last_seen.items()
+            if last_seen < cutoff
+        ]
+        for con_id in stale:
+            self._oi_cache.pop(con_id, None)
+            del self._last_seen[con_id]
+        if stale:
+            logger.info("unusual_detector: purged {} stale OI cache entries", len(stale))
+        return len(stale)
