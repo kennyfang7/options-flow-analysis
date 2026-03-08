@@ -381,6 +381,75 @@ def test_storage_package_exports():
     ])
 
 
+async def test_insert_classified_trade_returns_id(async_db_session):
+    """insert_classified_trade returns an integer PK."""
+    from datetime import datetime, timezone
+    from src.storage import insert_classified_trade
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc),
+        bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
+        last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.45,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol, delta=tick.delta,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=0.90, effective_price=2.45, last_size=600,
+        premium=147000.0, signal_strength=3.5, volume_delta=600,
+        window_ticks=1, timestamp=tick.timestamp, tick=tick,
+    )
+    trade_id = await insert_classified_trade(async_db_session, trade)
+    assert isinstance(trade_id, int)
+    assert trade_id > 0
+
+
+@pytest.mark.asyncio
+async def test_insert_classified_trade_persists_fields(async_db_session):
+    """Persisted ClassifiedTradeRecord matches the source ClassifiedTrade."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_classified_trade
+    from src.storage.models import ClassifiedTradeRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc),
+        bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
+        last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.45,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol, delta=tick.delta,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=0.90, effective_price=2.45, last_size=600,
+        premium=147000.0, signal_strength=3.5, volume_delta=600,
+        window_ticks=1, timestamp=tick.timestamp, tick=tick,
+    )
+    trade_id = await insert_classified_trade(async_db_session, trade)
+
+    result = await async_db_session.execute(
+        select(ClassifiedTradeRecord).where(ClassifiedTradeRecord.id == trade_id)
+    )
+    record = result.scalar_one()
+
+    assert record.symbol == "SPY"
+    assert record.con_id == 12345
+    assert record.trade_type == "block"
+    assert record.aggressor == "buy"
+    assert record.premium == pytest.approx(147000.0)
+    assert record.volume_delta == 600
+    assert record.classified_at == datetime(2026, 3, 7, 14, 30, 0)
+
+
+@pytest.mark.asyncio
 async def test_classified_trade_record_insert(async_db_session):
     """ClassifiedTradeRecord inserts and reads back correctly."""
     from datetime import datetime

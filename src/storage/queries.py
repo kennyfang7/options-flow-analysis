@@ -6,9 +6,10 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.analysis.flow_classifier import ClassifiedTrade
 from src.data.chain_fetcher import OptionChainSnapshot
 from src.data.tick_stream import TickUpdate
-from src.storage.models import ChainSnapshot, OptionContractRecord, OptionTick
+from src.storage.models import ChainSnapshot, ClassifiedTradeRecord, OptionContractRecord, OptionTick
 
 
 async def insert_chain_snapshot(
@@ -147,3 +148,43 @@ async def get_recent_ticks(
         .order_by(OptionTick.received_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def insert_classified_trade(
+    session: AsyncSession, trade: ClassifiedTrade
+) -> int:
+    """Persist a ClassifiedTrade emitted by FlowClassifier.
+
+    The 'tick' field on ClassifiedTrade is intentionally excluded —
+    raw tick data is persisted separately via insert_tick().
+
+    Args:
+        session: Active AsyncSession (caller manages commit/rollback).
+        trade: The ClassifiedTrade returned by FlowClassifier.classify().
+
+    Returns:
+        The auto-generated primary key of the new classified_trades row.
+    """
+    record = ClassifiedTradeRecord(
+        con_id=trade.con_id,
+        symbol=trade.symbol,
+        expiry=trade.expiry,
+        strike=trade.strike,
+        right=trade.right,
+        underlying_price=trade.underlying_price,
+        implied_vol=trade.implied_vol,
+        delta=trade.delta,
+        trade_type=trade.trade_type.value,
+        aggressor=trade.aggressor.value,
+        spread_position=trade.spread_position,
+        effective_price=trade.effective_price,
+        last_size=trade.last_size,
+        premium=trade.premium,
+        signal_strength=trade.signal_strength,
+        volume_delta=trade.volume_delta,
+        window_ticks=trade.window_ticks,
+        classified_at=trade.timestamp.replace(tzinfo=None),  # naive UTC for SQLite
+    )
+    session.add(record)
+    await session.flush()
+    return record.id
