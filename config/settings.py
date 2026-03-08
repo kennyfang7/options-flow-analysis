@@ -71,6 +71,28 @@ class Settings(BaseSettings):
         default=0.30, description="Spread position <= this → SELL aggressor"
     )
 
+    # Unusual Activity Detector
+    unusual_premium_threshold: float = Field(
+        default=250_000.0,
+        description="Minimum single-trade premium ($) to flag as PREMIUM_SIZE",
+    )
+    unusual_oi_ratio_threshold: float = Field(
+        default=0.50,
+        description="Minimum volume_delta/open_interest ratio to flag as OI_RATIO",
+    )
+    unusual_signal_threshold: float = Field(
+        default=5.0,
+        description="Minimum signal_strength score to flag as SIGNAL_STRENGTH",
+    )
+    otm_delta_threshold: float = Field(
+        default=0.30,
+        description="Maximum |delta| to consider a contract OTM for OTM_PREMIUM check",
+    )
+    otm_premium_threshold: float = Field(
+        default=100_000.0,
+        description="Minimum premium ($) for an OTM contract to flag as OTM_PREMIUM",
+    )
+
     # Alert Endpoints
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
     alert_email: str = Field(default="", description="Email address for alert notifications")
@@ -91,6 +113,37 @@ class Settings(BaseSettings):
                 "aggressor_buy_threshold must be greater than aggressor_sell_threshold"
             )
         return self
+
+    @model_validator(mode="after")
+    def unusual_premium_above_min_premium(self) -> Settings:
+        """Ensure unusual_premium_threshold > min_premium to avoid dead PREMIUM_SIZE condition."""
+        if self.unusual_premium_threshold <= self.min_premium:
+            raise ValueError(
+                f"unusual_premium_threshold ({self.unusual_premium_threshold}) "
+                f"must exceed min_premium ({self.min_premium})"
+            )
+        return self
+
+    @field_validator("unusual_oi_ratio_threshold")
+    @classmethod
+    def oi_ratio_threshold_must_be_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("unusual_oi_ratio_threshold must be greater than 0")
+        return v
+
+    @field_validator("otm_delta_threshold")
+    @classmethod
+    def otm_delta_threshold_must_be_in_range(cls, v: float) -> float:
+        if not (0 < v < 1):
+            raise ValueError("otm_delta_threshold must be between 0 and 1 (exclusive)")
+        return v
+
+    @field_validator("unusual_signal_threshold")
+    @classmethod
+    def unusual_signal_threshold_must_be_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("unusual_signal_threshold must be greater than 0")
+        return v
 
 
 # Single shared instance — import this everywhere
