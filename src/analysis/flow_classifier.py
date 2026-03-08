@@ -347,3 +347,32 @@ class FlowClassifier:
     #     Not implemented — deferred. Placeholder TradeType.MULTI_LEG exists.
     #     """
     #     raise NotImplementedError
+
+
+if __name__ == "__main__":
+    from config.settings import Settings
+
+    settings = Settings(min_premium=100.0)
+    classifier = FlowClassifier(settings)
+
+    base_time = datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc)
+
+    # Simulate a sweep: 3 rapid BUY prints on the same contract
+    for i in range(3):
+        tick = TickUpdate(
+            symbol="SPY", con_id=99999, expiry="20260320", strike=500.0, right="C",
+            timestamp=base_time + timedelta(milliseconds=i * 400),
+            bid=2.00, ask=2.50, last=2.45,
+            volume=50 * (i + 1), open_interest=1000, last_size=50,
+            underlying_price=500.0, implied_vol=0.25, delta=0.45,
+        )
+        result = classifier.classify(tick)
+        if result:
+            logger.info(
+                "[tick {}] {} | type={} aggressor={} premium=${:.0f} signal={:.2f}",
+                i + 1, result.symbol, result.trade_type.value,
+                result.aggressor.value, result.premium or 0,
+                result.signal_strength or 0,
+            )
+
+    logger.success("Smoke test complete.")
