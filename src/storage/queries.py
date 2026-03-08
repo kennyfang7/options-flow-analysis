@@ -7,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.analysis.flow_classifier import ClassifiedTrade
+from src.analysis.unusual_detector import UnusualSignal
 from src.data.chain_fetcher import OptionChainSnapshot
 from src.data.tick_stream import TickUpdate
-from src.storage.models import ChainSnapshot, ClassifiedTradeRecord, OptionContractRecord, OptionTick
+from src.storage.models import ChainSnapshot, ClassifiedTradeRecord, OptionContractRecord, OptionTick, UnusualSignalRecord
 
 
 async def insert_chain_snapshot(
@@ -184,6 +185,49 @@ async def insert_classified_trade(
         volume_delta=trade.volume_delta,
         window_ticks=trade.window_ticks,
         classified_at=trade.timestamp.replace(tzinfo=None),  # naive UTC for SQLite
+    )
+    session.add(record)
+    await session.flush()
+    return record.id
+
+
+async def insert_unusual_signal(
+    session: AsyncSession, signal: UnusualSignal
+) -> int:
+    """Persist an UnusualSignal emitted by UnusualDetector.
+
+    reasons is stored as a JSON array string for SQLite compatibility.
+    classified_at and flagged_at are stored as naive UTC (tzinfo stripped)
+    for SQLite compatibility — revisit when migrating to PostgreSQL.
+
+    Args:
+        session: Active AsyncSession (caller manages commit/rollback).
+        signal: The UnusualSignal returned by UnusualDetector.detect().
+
+    Returns:
+        The auto-generated primary key of the new unusual_signals row.
+    """
+    import json
+
+    record = UnusualSignalRecord(
+        con_id=signal.con_id,
+        symbol=signal.symbol,
+        expiry=signal.expiry,
+        strike=signal.strike,
+        right=signal.right,
+        underlying_price=signal.underlying_price,
+        implied_vol=signal.implied_vol,
+        delta=signal.delta,
+        effective_price=signal.effective_price,
+        trade_type=signal.trade_type.value,
+        aggressor=signal.aggressor.value,
+        premium=signal.premium,
+        volume_delta=signal.volume_delta,
+        signal_strength=signal.signal_strength,
+        top_reason=signal.top_reason.value,
+        reasons=json.dumps([r.value for r in signal.reasons]),
+        classified_at=signal.trade.timestamp.replace(tzinfo=None),
+        flagged_at=signal.flagged_at.replace(tzinfo=None),
     )
     session.add(record)
     await session.flush()

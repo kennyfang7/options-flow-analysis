@@ -514,3 +514,103 @@ async def test_unusual_signal_record_insert(async_db_session):
     assert record.id is not None
     assert record.top_reason == "premium_size"
     assert json.loads(record.reasons) == ["premium_size"]
+
+
+@pytest.mark.asyncio
+async def test_insert_unusual_signal_returns_id(async_db_session):
+    """insert_unusual_signal returns a positive integer PK."""
+    import json
+    from datetime import datetime, timezone
+    from src.storage import insert_unusual_signal
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.analysis.unusual_detector import UnusualReason, UnusualSignal
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
+        last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.20,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol, delta=tick.delta,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=0.9, effective_price=2.45, last_size=600,
+        premium=600.0, signal_strength=1.0, volume_delta=60,
+        window_ticks=1, timestamp=tick.timestamp, tick=tick,
+    )
+    signal = UnusualSignal(
+        symbol=trade.symbol, con_id=trade.con_id, expiry=trade.expiry,
+        right=trade.right, strike=trade.strike, trade_type=trade.trade_type,
+        aggressor=trade.aggressor, premium=trade.premium,
+        volume_delta=trade.volume_delta, signal_strength=trade.signal_strength,
+        delta=trade.delta, underlying_price=trade.underlying_price,
+        implied_vol=trade.implied_vol, effective_price=trade.effective_price,
+        reasons=[UnusualReason.PREMIUM_SIZE],
+        top_reason=UnusualReason.PREMIUM_SIZE,
+        flagged_at=datetime(2026, 3, 8, 14, 30, 1, tzinfo=timezone.utc),
+        trade=trade,
+    )
+    signal_id = await insert_unusual_signal(async_db_session, signal)
+    assert isinstance(signal_id, int)
+    assert signal_id > 0
+
+
+@pytest.mark.asyncio
+async def test_insert_unusual_signal_persists_fields(async_db_session):
+    """Persisted UnusualSignalRecord matches the source UnusualSignal."""
+    import json
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_unusual_signal
+    from src.storage.models import UnusualSignalRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.analysis.unusual_detector import UnusualReason, UnusualSignal
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
+        last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.20,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol, delta=tick.delta,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=0.9, effective_price=2.45, last_size=600,
+        premium=600.0, signal_strength=1.0, volume_delta=60,
+        window_ticks=1, timestamp=tick.timestamp, tick=tick,
+    )
+    signal = UnusualSignal(
+        symbol=trade.symbol, con_id=trade.con_id, expiry=trade.expiry,
+        right=trade.right, strike=trade.strike, trade_type=trade.trade_type,
+        aggressor=trade.aggressor, premium=trade.premium,
+        volume_delta=trade.volume_delta, signal_strength=trade.signal_strength,
+        delta=trade.delta, underlying_price=trade.underlying_price,
+        implied_vol=trade.implied_vol, effective_price=trade.effective_price,
+        reasons=[UnusualReason.PREMIUM_SIZE, UnusualReason.OI_RATIO],
+        top_reason=UnusualReason.PREMIUM_SIZE,
+        flagged_at=datetime(2026, 3, 8, 14, 30, 1, tzinfo=timezone.utc),
+        trade=trade,
+    )
+    signal_id = await insert_unusual_signal(async_db_session, signal)
+
+    result = await async_db_session.execute(
+        select(UnusualSignalRecord).where(UnusualSignalRecord.id == signal_id)
+    )
+    record = result.scalar_one()
+
+    assert record.symbol == "SPY"
+    assert record.con_id == 12345
+    assert record.trade_type == "block"
+    assert record.aggressor == "buy"
+    assert record.top_reason == "premium_size"
+    assert json.loads(record.reasons) == ["premium_size", "oi_ratio"]
+    assert record.premium == pytest.approx(600.0)
+    assert record.volume_delta == 60
+    assert record.classified_at == datetime(2026, 3, 8, 14, 30, 0)
+    assert record.flagged_at == datetime(2026, 3, 8, 14, 30, 1)
