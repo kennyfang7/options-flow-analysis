@@ -266,3 +266,54 @@ class UnusualDetector:
         if stale:
             logger.info("unusual_detector: purged {} stale OI cache entries", len(stale))
         return len(stale)
+
+
+if __name__ == "__main__":
+    import asyncio
+    from config.settings import Settings
+    from src.analysis.flow_classifier import FlowClassifier
+    from src.data.tick_stream import TickUpdate
+
+    async def main() -> None:
+        settings = Settings(
+            min_premium=100.0,
+            unusual_premium_threshold=500.0,
+            unusual_oi_ratio_threshold=0.50,
+            unusual_signal_threshold=5.0,
+            otm_delta_threshold=0.30,
+            otm_premium_threshold=200.0,
+        )
+        classifier = FlowClassifier(settings)
+        detector = UnusualDetector(settings)
+
+        base_time = datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc)
+
+        # Simulate a large OTM sweep: 3 rapid BUY prints, delta=0.20 (OTM), large premium
+        results = []
+        for i in range(3):
+            tick = TickUpdate(
+                symbol="SPY", con_id=99999, expiry="20260320", strike=550.0, right="C",
+                timestamp=base_time + timedelta(milliseconds=i * 400),
+                bid=1.00, ask=1.50, last=1.45,
+                volume=100 * (i + 1), open_interest=200, last_size=100,
+                underlying_price=500.0, implied_vol=0.40, delta=0.20,
+            )
+            trade = classifier.classify(tick)
+            if trade:
+                signal = await detector.detect(trade)
+                results.append((trade, signal))
+                logger.info(
+                    "[tick {}] type={} | signal={} top_reason={}",
+                    i + 1,
+                    trade.trade_type.value,
+                    "FLAGGED" if signal else "none",
+                    signal.top_reason.value if signal else "-",
+                )
+
+        logger.success(
+            "Smoke test complete. {} trades classified, {} flagged as unusual.",
+            len(results),
+            sum(1 for _, s in results if s is not None),
+        )
+
+    asyncio.run(main())
