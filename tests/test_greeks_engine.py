@@ -269,3 +269,160 @@ def test_enriched_trade_tick_excluded_from_serialization():
     assert "tick" not in dumped
     assert "gamma" in dumped
     assert "moneyness" in dumped
+
+
+# ---------------------------------------------------------------------------
+# GreeksEngine.enrich()
+# ---------------------------------------------------------------------------
+
+def test_enrich_uses_ibkr_greeks_when_available():
+    """When IBKR provides all Greeks, use them directly (no BS)."""
+    from src.analysis.greeks_engine import GreeksEngine
+    from config.settings import Settings
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    trade = _make_classified_trade()  # tick has delta=0.52, gamma=0.01, theta=-0.05, vega=0.40, iv=0.20
+
+    enriched = engine.enrich(trade)
+
+    assert enriched.delta == pytest.approx(0.52)
+    assert enriched.gamma == pytest.approx(0.01)
+    assert enriched.theta == pytest.approx(-0.05)
+    assert enriched.vega == pytest.approx(0.40)
+    assert enriched.implied_vol == pytest.approx(0.20)
+    assert enriched.iv_source == "ibkr"
+
+
+def test_enrich_computes_iv_via_bs_when_ibkr_iv_missing():
+    """When IBKR IV is None but price and underlying are present, compute via BS."""
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.data.tick_stream import TickUpdate
+    from config.settings import Settings
+    from datetime import date, timedelta
+
+    future_expiry = (date.today() + timedelta(days=365)).strftime("%Y%m%d")
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=99999, expiry=future_expiry, strike=100.0, right="C",
+        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        bid=10.0, ask=11.0, last=10.45, volume=100, last_size=50,
+        underlying_price=100.0, implied_vol=None, delta=None,
+        gamma=None, theta=None, vega=None,
+    )
+    trade = _make_classified_trade(
+        con_id=99999, expiry=future_expiry, strike=100.0,
+        underlying_price=100.0, implied_vol=None, delta=None,
+        effective_price=10.45, premium=52_250.0, tick=tick,
+    )
+
+    engine = GreeksEngine(Settings(min_premium=100.0, risk_free_rate=0.05))
+    enriched = engine.enrich(trade)
+
+    assert enriched.iv_source == "black_scholes"
+    assert enriched.implied_vol is not None
+    assert 0.05 < enriched.implied_vol < 1.0
+    assert enriched.delta is not None
+    assert enriched.gamma is not None
+
+
+def test_enrich_iv_source_unavailable_when_no_underlying():
+    """When underlying_price is None, BS can't run → iv_source='unavailable'."""
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.data.tick_stream import TickUpdate
+    from config.settings import Settings
+    from datetime import date, timedelta
+
+    future_expiry = (date.today() + timedelta(days=30)).strftime("%Y%m%d")
+    tick = TickUpdate(
+        symbol="SPY", con_id=11111, expiry=future_expiry, strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        bid=None, ask=None, last=None, volume=None, last_size=50,
+        underlying_price=None, implied_vol=None, delta=None,
+        gamma=None, theta=None, vega=None,
+    )
+    trade = _make_classified_trade(
+        con_id=11111, expiry=future_expiry, underlying_price=None,
+        implied_vol=None, delta=None, effective_price=5.0,
+        premium=25_000.0, tick=tick,
+    )
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    enriched = engine.enrich(trade)
+
+    assert enriched.iv_source == "unavailable"
+    assert enriched.implied_vol is None
+    assert enriched.delta is None
+
+
+def test_enrich_moneyness_atm():
+    from src.analysis.greeks_engine import GreeksEngine, Moneyness
+    from config.settings import Settings
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    trade = _make_classified_trade(underlying_price=500.0, strike=500.0, right="C")
+    enriched = engine.enrich(trade)
+    assert enriched.moneyness == Moneyness.ATM
+
+
+def test_enrich_moneyness_otm_call():
+    from src.analysis.greeks_engine import GreeksEngine, Moneyness
+    from config.settings import Settings
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    trade = _make_classified_trade(underlying_price=480.0, strike=500.0, right="C")
+    enriched = engine.enrich(trade)
+    assert enriched.moneyness == Moneyness.OTM
+
+
+def test_enrich_days_to_expiry_positive():
+    from src.analysis.greeks_engine import GreeksEngine
+    from config.settings import Settings
+    from datetime import date, timedelta
+
+    future_expiry = (date.today() + timedelta(days=45)).strftime("%Y%m%d")
+    tick = _make_classified_trade().tick
+    trade = _make_classified_trade(expiry=future_expiry, tick=tick)
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    enriched = engine.enrich(trade)
+    assert enriched.days_to_expiry == 45
+
+
+def test_enrich_returns_enriched_trade_subclass():
+    from src.analysis.greeks_engine import GreeksEngine, EnrichedTrade
+    from src.analysis.flow_classifier import ClassifiedTrade
+    from config.settings import Settings
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    enriched = engine.enrich(_make_classified_trade())
+    assert isinstance(enriched, EnrichedTrade)
+    assert isinstance(enriched, ClassifiedTrade)
+
+
+def test_enrich_partial_ibkr_greeks_fills_remainder_via_bs():
+    """If IBKR gives IV+delta but not gamma/theta/vega, compute missing ones via BS."""
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.data.tick_stream import TickUpdate
+    from config.settings import Settings
+    from datetime import date, timedelta
+
+    future_expiry = (date.today() + timedelta(days=90)).strftime("%Y%m%d")
+    tick = TickUpdate(
+        symbol="SPY", con_id=22222, expiry=future_expiry, strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        bid=10.0, ask=11.0, last=10.50, volume=100, last_size=50,
+        underlying_price=500.0,
+        implied_vol=0.25, delta=0.52, gamma=None, theta=None, vega=None,
+    )
+    trade = _make_classified_trade(
+        con_id=22222, expiry=future_expiry, implied_vol=0.25, delta=0.52,
+        effective_price=10.50, premium=52_500.0, tick=tick,
+    )
+
+    engine = GreeksEngine(Settings(min_premium=100.0))
+    enriched = engine.enrich(trade)
+
+    assert enriched.iv_source == "ibkr"
+    assert enriched.gamma is not None
+    assert enriched.theta is not None
+    assert enriched.vega is not None

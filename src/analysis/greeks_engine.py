@@ -3,14 +3,11 @@ from __future__ import annotations
 import math
 from datetime import date
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from config.settings import Settings
 from src.analysis.flow_classifier import ClassifiedTrade
-
-if TYPE_CHECKING:
-    from config.settings import Settings
 
 
 # ---------------------------------------------------------------------------
@@ -288,3 +285,130 @@ class EnrichedTrade(ClassifiedTrade):
     days_to_expiry: int = 0
     moneyness: Moneyness = Moneyness.UNKNOWN
     iv_source: str = "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# GreeksEngine
+# ---------------------------------------------------------------------------
+
+
+class GreeksEngine:
+    """Synchronous Greeks enrichment layer for ClassifiedTrade objects.
+
+    Uses IBKR's modelGreeks (already on TickUpdate) as the primary source.
+    Falls back to Black-Scholes computation when IBKR data is absent.
+
+    No IO is performed — safe to call on the hot path between
+    FlowClassifier.classify() and UnusualDetector.detect().
+
+    Example:
+        engine = GreeksEngine(settings)
+        enriched = engine.enrich(trade)
+        signal = await detector.detect(enriched)
+
+    Args:
+        settings: Application settings (uses risk_free_rate for BS fallback).
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def enrich(self, trade: ClassifiedTrade) -> EnrichedTrade:
+        """Attach full Greeks and context to a ClassifiedTrade.
+
+        Strategy (for each Greek):
+          1. Use IBKR-provided value from trade.tick if non-None.
+          2. If IV is available but gamma/theta/vega are None, compute via BS.
+          3. If IV is None but effective_price and underlying are available,
+             compute IV via Newton-Raphson, then derive all Greeks via BS.
+          4. Leave as None if inputs are insufficient.
+
+        Args:
+            trade: ClassifiedTrade from FlowClassifier.classify().
+
+        Returns:
+            EnrichedTrade with Greeks, moneyness, and days_to_expiry populated.
+        """
+        tick = trade.tick
+        r = self._settings.risk_free_rate
+
+        # --- Step 1: Collect IBKR values ---
+        delta = trade.delta
+        implied_vol = trade.implied_vol
+        gamma: float | None = tick.gamma
+        theta: float | None = tick.theta
+        vega: float | None = tick.vega
+        iv_source = "ibkr" if implied_vol is not None else "unavailable"
+
+        # --- Step 2: Black-Scholes fallback ---
+        S = trade.underlying_price
+        K = trade.strike
+        T_days = _days_to_expiry(trade.expiry)
+        T = T_days / 365.0
+
+        bs_available = S is not None and S > 0 and K > 0 and T > 0
+
+        if bs_available:
+            # 2a. Compute IV from option price if IBKR didn't provide it
+            if implied_vol is None and trade.effective_price is not None:
+                computed_iv = _implied_vol(
+                    price=trade.effective_price,
+                    S=S,  # type: ignore[arg-type]
+                    K=K,
+                    T=T,
+                    r=r,
+                    right=trade.right,
+                )
+                if computed_iv is not None:
+                    implied_vol = computed_iv
+                    iv_source = "black_scholes"
+
+            # 2b. Derive any missing Greeks from IV via BS
+            if implied_vol is not None and implied_vol > 0:
+                try:
+                    d1, d2 = _d1_d2(S, K, T, r, implied_vol)  # type: ignore[arg-type]
+                    if delta is None:
+                        delta = _bs_delta(d1, trade.right)
+                    if gamma is None:
+                        gamma = _bs_gamma(S, d1, implied_vol, T)  # type: ignore[arg-type]
+                    if theta is None:
+                        theta = _bs_theta(S, K, T, r, implied_vol, d1, d2, trade.right)  # type: ignore[arg-type]
+                    if vega is None:
+                        vega = _bs_vega(S, d1, T)  # type: ignore[arg-type]
+                except (ValueError, ZeroDivisionError):
+                    logger.debug(
+                        "greeks_engine: BS fallback failed for con_id={} expiry={}",
+                        trade.con_id, trade.expiry,
+                    )
+
+        # --- Step 3: Context fields ---
+        moneyness = _classify_moneyness(trade.underlying_price, trade.strike, trade.right)
+
+        # --- Step 4: Build EnrichedTrade ---
+        # model_dump() excludes 'tick' (Field(exclude=True) on ClassifiedTrade).
+        # Override delta and implied_vol with enriched values.
+        base = trade.model_dump()
+        base["delta"] = delta
+        base["implied_vol"] = implied_vol
+
+        return EnrichedTrade(
+            **base,
+            tick=tick,
+            gamma=gamma,
+            theta=theta,
+            vega=vega,
+            days_to_expiry=T_days,
+            moneyness=moneyness,
+            iv_source=iv_source,
+        )
+
+    def purge_stale(self, max_age_seconds: float = 3600.0) -> int:
+        """No-op — GreeksEngine is stateless.
+
+        Included for interface consistency with FlowClassifier and UnusualDetector,
+        which both expose purge_stale() for the orchestration layer to call hourly.
+
+        Returns:
+            Always 0.
+        """
+        return 0
