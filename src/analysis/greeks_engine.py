@@ -42,8 +42,7 @@ def _d1_d2(
         Tuple (d1, d2).
 
     Raises:
-        ValueError: If T <= 0 or sigma <= 0.
-        ZeroDivisionError: If S/K <= 0 (degenerate inputs).
+        ValueError: If T <= 0, sigma <= 0, or S/K <= 0 (degenerate inputs).
     """
     if T <= 0 or sigma <= 0:
         raise ValueError(f"T and sigma must be positive; got T={T}, sigma={sigma}")
