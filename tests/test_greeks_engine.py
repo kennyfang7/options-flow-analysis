@@ -190,3 +190,82 @@ def test_moneyness_put_otm():
 def test_moneyness_unknown_when_no_underlying():
     from src.analysis.greeks_engine import _classify_moneyness, Moneyness
     assert _classify_moneyness(underlying_price=None, strike=500.0, right="C") == Moneyness.UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# EnrichedTrade model
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timezone
+
+
+def _make_classified_trade(**overrides):
+    """Helper: build a minimal ClassifiedTrade for testing."""
+    from src.analysis.flow_classifier import ClassifiedTrade, TradeType, Aggressor
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=12345, expiry="20260620", strike=500.0, right="C",
+        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        bid=10.0, ask=10.50, last=10.25, volume=500, open_interest=1000,
+        last_size=100, underlying_price=500.0,
+        implied_vol=0.20, delta=0.52, gamma=0.01, theta=-0.05, vega=0.40,
+    )
+    defaults = dict(
+        symbol="SPY", con_id=12345, expiry="20260620", right="C", strike=500.0,
+        underlying_price=500.0, implied_vol=0.20, delta=0.52,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=0.85, effective_price=10.25, last_size=100,
+        premium=102_500.0, signal_strength=6.0, volume_delta=100,
+        window_ticks=1,
+        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        tick=tick,
+    )
+    defaults.update(overrides)
+    return ClassifiedTrade(**defaults)
+
+
+def test_enriched_trade_has_extra_greek_fields():
+    from src.analysis.greeks_engine import EnrichedTrade, Moneyness
+
+    trade = _make_classified_trade()
+    tick = trade.tick
+
+    enriched = EnrichedTrade(
+        **trade.model_dump(),
+        tick=tick,
+        gamma=0.01,
+        theta=-0.05,
+        vega=0.40,
+        days_to_expiry=102,
+        moneyness=Moneyness.ATM,
+        iv_source="ibkr",
+    )
+
+    assert enriched.gamma == pytest.approx(0.01)
+    assert enriched.theta == pytest.approx(-0.05)
+    assert enriched.vega == pytest.approx(0.40)
+    assert enriched.days_to_expiry == 102
+    assert enriched.moneyness == Moneyness.ATM
+    assert enriched.iv_source == "ibkr"
+
+
+def test_enriched_trade_is_classified_trade_subclass():
+    from src.analysis.greeks_engine import EnrichedTrade
+    from src.analysis.flow_classifier import ClassifiedTrade
+    assert issubclass(EnrichedTrade, ClassifiedTrade)
+
+
+def test_enriched_trade_tick_excluded_from_serialization():
+    from src.analysis.greeks_engine import EnrichedTrade, Moneyness
+
+    trade = _make_classified_trade()
+    enriched = EnrichedTrade(
+        **trade.model_dump(), tick=trade.tick,
+        gamma=0.01, theta=-0.05, vega=0.40,
+        days_to_expiry=102, moneyness=Moneyness.ATM, iv_source="ibkr",
+    )
+    dumped = enriched.model_dump()
+    assert "tick" not in dumped
+    assert "gamma" in dumped
+    assert "moneyness" in dumped

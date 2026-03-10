@@ -258,3 +258,33 @@ def _classify_moneyness(
         if ratio > 1.01:
             return Moneyness.OTM
         return Moneyness.ATM
+
+
+# ---------------------------------------------------------------------------
+# Output model
+# ---------------------------------------------------------------------------
+
+
+class EnrichedTrade(ClassifiedTrade):
+    """A ClassifiedTrade with full Greeks and context fields attached.
+
+    Emitted by GreeksEngine.enrich(). Inherits all ClassifiedTrade fields;
+    delta and implied_vol may be overridden with Black-Scholes estimates
+    when IBKR's modelGreeks are unavailable.
+
+    Attributes:
+        gamma: Rate of delta change per $1 move in underlying. None when
+            unavailable and BS inputs are insufficient.
+        theta: Per-calendar-day decay in option value (typically negative).
+        vega: Change in option value per 1% rise in implied vol.
+        days_to_expiry: Calendar days until expiry at enrich() call time.
+        moneyness: Price-based ITM/ATM/OTM classification.
+        iv_source: Origin of implied_vol: "ibkr", "black_scholes", or "unavailable".
+    """
+
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    days_to_expiry: int = 0
+    moneyness: Moneyness = Moneyness.UNKNOWN
+    iv_source: str = "unavailable"
