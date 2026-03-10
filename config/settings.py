@@ -45,6 +45,13 @@ class Settings(BaseSettings):
         description="Minimum dollar premium to track (e.g. 50000 = $50k)",
     )
 
+    # Greeks Engine
+    risk_free_rate: float = Field(
+        default=0.05,
+        description="Annualized risk-free rate used for Black-Scholes fallback (e.g. 0.05 = 5%)",
+        ge=0.0,
+    )
+
     # Flow Classifier
     sweep_window_seconds: float = Field(
         default=2.0, description="Seconds window for sweep detection"
