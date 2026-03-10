@@ -1,0 +1,141 @@
+from __future__ import annotations
+import math
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# _norm_cdf
+# ---------------------------------------------------------------------------
+
+def test_norm_cdf_at_zero():
+    from src.analysis.greeks_engine import _norm_cdf
+    assert _norm_cdf(0.0) == pytest.approx(0.5, abs=1e-6)
+
+def test_norm_cdf_large_positive():
+    from src.analysis.greeks_engine import _norm_cdf
+    assert _norm_cdf(10.0) == pytest.approx(1.0, abs=1e-6)
+
+def test_norm_cdf_large_negative():
+    from src.analysis.greeks_engine import _norm_cdf
+    assert _norm_cdf(-10.0) == pytest.approx(0.0, abs=1e-6)
+
+def test_norm_cdf_known_value():
+    from src.analysis.greeks_engine import _norm_cdf
+    # N(1.96) ≈ 0.975 (well-known z-score)
+    assert _norm_cdf(1.96) == pytest.approx(0.975, abs=0.001)
+
+
+# ---------------------------------------------------------------------------
+# _norm_pdf
+# ---------------------------------------------------------------------------
+
+def test_norm_pdf_at_zero():
+    from src.analysis.greeks_engine import _norm_pdf
+    expected = 1.0 / math.sqrt(2 * math.pi)
+    assert _norm_pdf(0.0) == pytest.approx(expected, abs=1e-9)
+
+def test_norm_pdf_symmetry():
+    from src.analysis.greeks_engine import _norm_pdf
+    assert _norm_pdf(1.0) == pytest.approx(_norm_pdf(-1.0), abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# _bs_price
+# ---------------------------------------------------------------------------
+
+def test_bs_price_call_atm():
+    """ATM call should have known approximate value."""
+    from src.analysis.greeks_engine import _bs_price
+    # S=100, K=100, T=1yr, r=0.05, sigma=0.20
+    # Classic BS: C ≈ 10.45
+    price = _bs_price(S=100.0, K=100.0, T=1.0, r=0.05, sigma=0.20, right="C")
+    assert price == pytest.approx(10.45, abs=0.05)
+
+def test_bs_price_put_call_parity():
+    """C - P = S - K*e^(-rT) (put-call parity)."""
+    from src.analysis.greeks_engine import _bs_price
+    S, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.20
+    call = _bs_price(S, K, T, r, sigma, "C")
+    put = _bs_price(S, K, T, r, sigma, "P")
+    parity = S - K * math.exp(-r * T)
+    assert (call - put) == pytest.approx(parity, abs=1e-6)
+
+def test_bs_price_deep_itm_call():
+    """Deep ITM call price ≈ S - K*e^(-rT)."""
+    from src.analysis.greeks_engine import _bs_price
+    price = _bs_price(S=200.0, K=100.0, T=1.0, r=0.05, sigma=0.20, right="C")
+    intrinsic = 200.0 - 100.0 * math.exp(-0.05)
+    assert price == pytest.approx(intrinsic, abs=1.0)
+
+def test_bs_price_deep_otm_call_is_small():
+    """Deep OTM call should be nearly worthless."""
+    from src.analysis.greeks_engine import _bs_price
+    price = _bs_price(S=100.0, K=200.0, T=0.1, r=0.05, sigma=0.20, right="C")
+    assert price < 0.01
+
+
+# ---------------------------------------------------------------------------
+# _bs_delta, _bs_gamma, _bs_theta, _bs_vega
+# ---------------------------------------------------------------------------
+
+def test_bs_delta_atm_call_near_half():
+    """ATM call delta ≈ 0.5 for short T."""
+    from src.analysis.greeks_engine import _bs_delta, _d1_d2
+    T = 30 / 365
+    d1, _ = _d1_d2(S=100.0, K=100.0, T=T, r=0.05, sigma=0.20)
+    delta = _bs_delta(d1, "C")
+    assert 0.50 < delta < 0.60
+
+def test_bs_delta_call_plus_put_equals_one():
+    """delta_call - delta_put = 1."""
+    from src.analysis.greeks_engine import _bs_delta, _d1_d2
+    d1, _ = _d1_d2(S=100.0, K=100.0, T=1.0, r=0.05, sigma=0.20)
+    delta_call = _bs_delta(d1, "C")
+    delta_put = _bs_delta(d1, "P")
+    assert (delta_call - delta_put) == pytest.approx(1.0, abs=1e-9)
+
+def test_bs_gamma_positive():
+    from src.analysis.greeks_engine import _bs_gamma, _d1_d2
+    d1, _ = _d1_d2(100.0, 100.0, 1.0, 0.05, 0.20)
+    gamma = _bs_gamma(S=100.0, d1=d1, sigma=0.20, T=1.0)
+    assert gamma > 0
+
+def test_bs_theta_call_negative():
+    """Theta is negative — options decay with time."""
+    from src.analysis.greeks_engine import _bs_theta, _d1_d2
+    d1, d2 = _d1_d2(100.0, 100.0, 1.0, 0.05, 0.20)
+    theta = _bs_theta(S=100.0, K=100.0, T=1.0, r=0.05, sigma=0.20, d1=d1, d2=d2, right="C")
+    assert theta < 0
+
+def test_bs_vega_positive():
+    """Vega is always positive."""
+    from src.analysis.greeks_engine import _bs_vega, _d1_d2
+    d1, _ = _d1_d2(100.0, 100.0, 1.0, 0.05, 0.20)
+    vega = _bs_vega(S=100.0, d1=d1, T=1.0)
+    assert vega > 0
+
+
+# ---------------------------------------------------------------------------
+# _implied_vol
+# ---------------------------------------------------------------------------
+
+def test_implied_vol_recovers_input_sigma():
+    """Given BS price with sigma=0.20, _implied_vol should return ~0.20."""
+    from src.analysis.greeks_engine import _bs_price, _implied_vol
+    S, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.20
+    price = _bs_price(S, K, T, r, sigma, "C")
+    recovered = _implied_vol(price=price, S=S, K=K, T=T, r=r, right="C")
+    assert recovered == pytest.approx(0.20, abs=0.001)
+
+def test_implied_vol_put_recovers_input_sigma():
+    from src.analysis.greeks_engine import _bs_price, _implied_vol
+    S, K, T, r, sigma = 100.0, 105.0, 0.5, 0.05, 0.25
+    price = _bs_price(S, K, T, r, sigma, "P")
+    recovered = _implied_vol(price=price, S=S, K=K, T=T, r=r, right="P")
+    assert recovered == pytest.approx(0.25, abs=0.001)
+
+def test_implied_vol_returns_none_for_zero_price():
+    """Zero price means no vol can be found."""
+    from src.analysis.greeks_engine import _implied_vol
+    result = _implied_vol(price=0.0, S=100.0, K=100.0, T=1.0, r=0.05, right="C")
+    assert result is None
