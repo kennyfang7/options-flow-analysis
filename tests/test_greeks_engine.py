@@ -139,3 +139,54 @@ def test_implied_vol_returns_none_for_zero_price():
     from src.analysis.greeks_engine import _implied_vol
     result = _implied_vol(price=0.0, S=100.0, K=100.0, T=1.0, r=0.05, right="C")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _days_to_expiry
+# ---------------------------------------------------------------------------
+
+def test_days_to_expiry_future():
+    from src.analysis.greeks_engine import _days_to_expiry
+    from datetime import date, timedelta
+    future = (date.today() + timedelta(days=30)).strftime("%Y%m%d")
+    assert _days_to_expiry(future) == 30
+
+def test_days_to_expiry_today_is_zero():
+    from src.analysis.greeks_engine import _days_to_expiry
+    from datetime import date
+    today = date.today().strftime("%Y%m%d")
+    assert _days_to_expiry(today) == 0
+
+def test_days_to_expiry_past_is_zero():
+    """Expired contracts return 0, not negative."""
+    from src.analysis.greeks_engine import _days_to_expiry
+    assert _days_to_expiry("20200101") == 0
+
+
+# ---------------------------------------------------------------------------
+# _classify_moneyness
+# ---------------------------------------------------------------------------
+
+def test_moneyness_call_itm():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=510.0, strike=500.0, right="C") == Moneyness.ITM
+
+def test_moneyness_call_otm():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=490.0, strike=500.0, right="C") == Moneyness.OTM
+
+def test_moneyness_call_atm():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=501.0, strike=500.0, right="C") == Moneyness.ATM
+
+def test_moneyness_put_itm():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=490.0, strike=500.0, right="P") == Moneyness.ITM
+
+def test_moneyness_put_otm():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=510.0, strike=500.0, right="P") == Moneyness.OTM
+
+def test_moneyness_unknown_when_no_underlying():
+    from src.analysis.greeks_engine import _classify_moneyness, Moneyness
+    assert _classify_moneyness(underlying_price=None, strike=500.0, right="C") == Moneyness.UNKNOWN

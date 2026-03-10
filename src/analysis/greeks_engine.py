@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from datetime import date
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -194,3 +196,65 @@ def _implied_vol(
             return max(sigma, 1e-6)
 
     return None  # did not converge
+
+
+# ---------------------------------------------------------------------------
+# Domain helpers
+# ---------------------------------------------------------------------------
+
+
+class Moneyness(str, Enum):
+    """Price-based moneyness classification for an option contract."""
+
+    ITM = "itm"
+    ATM = "atm"
+    OTM = "otm"
+    UNKNOWN = "unknown"  # underlying_price unavailable
+
+
+def _days_to_expiry(expiry: str) -> int:
+    """Compute calendar days until expiry from an YYYYMMDD string.
+
+    Args:
+        expiry: Expiration date in YYYYMMDD format (e.g. "20260320").
+
+    Returns:
+        Days remaining (0 if already expired or expiring today).
+    """
+    exp_date = date(int(expiry[:4]), int(expiry[4:6]), int(expiry[6:8]))
+    delta = (exp_date - date.today()).days
+    return max(delta, 0)
+
+
+def _classify_moneyness(
+    underlying_price: float | None, strike: float, right: str
+) -> Moneyness:
+    """Classify an option as ITM, ATM, or OTM using price ratio.
+
+    Uses a ±1% band around the strike to define ATM.
+
+    Args:
+        underlying_price: Current price of the underlying. None → UNKNOWN.
+        strike: Option strike price.
+        right: "C" for call, "P" for put.
+
+    Returns:
+        Moneyness enum value.
+    """
+    if underlying_price is None:
+        return Moneyness.UNKNOWN
+
+    ratio = underlying_price / strike  # > 1 means underlying is above strike
+
+    if right == "C":
+        if ratio > 1.01:
+            return Moneyness.ITM
+        if ratio < 0.99:
+            return Moneyness.OTM
+        return Moneyness.ATM
+    else:  # Put
+        if ratio < 0.99:
+            return Moneyness.ITM
+        if ratio > 1.01:
+            return Moneyness.OTM
+        return Moneyness.ATM
