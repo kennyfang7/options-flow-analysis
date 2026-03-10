@@ -412,3 +412,80 @@ class GreeksEngine:
             Always 0.
         """
         return 0
+
+
+if __name__ == "__main__":
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from datetime import date as _date
+
+    from src.analysis.flow_classifier import FlowClassifier
+    from src.analysis.unusual_detector import UnusualDetector
+    from src.data.tick_stream import TickUpdate
+
+    async def main() -> None:
+        settings = Settings(
+            min_premium=100.0,
+            unusual_premium_threshold=50_000.0,
+            unusual_oi_ratio_threshold=0.50,
+            unusual_signal_threshold=5.0,
+            otm_delta_threshold=0.30,
+            otm_premium_threshold=30_000.0,
+            risk_free_rate=0.05,
+        )
+        classifier = FlowClassifier(settings)
+        engine = GreeksEngine(settings)
+        detector = UnusualDetector(settings)
+
+        future_expiry = (_date.today() + timedelta(days=90)).strftime("%Y%m%d")
+        base_time = datetime(2026, 3, 10, 14, 30, 0, tzinfo=timezone.utc)
+
+        # Scenario 1: IBKR provides full Greeks
+        logger.info("--- Scenario 1: IBKR Greeks present ---")
+        for i in range(3):
+            tick = TickUpdate(
+                symbol="SPY", con_id=99001, expiry=future_expiry, strike=500.0, right="C",
+                timestamp=base_time + timedelta(milliseconds=i * 400),
+                bid=10.00, ask=10.50, last=10.45,
+                volume=100 * (i + 1), open_interest=1000, last_size=100,
+                underlying_price=500.0, implied_vol=0.25, delta=0.52,
+                gamma=0.008, theta=-0.12, vega=0.38,
+            )
+            trade = classifier.classify(tick)
+            if trade:
+                enriched = engine.enrich(trade)
+                signal = await detector.detect(enriched)
+                logger.info(
+                    "[S1 tick {}] iv_source={} delta={:.3f} gamma={:.4f} moneyness={} dte={} signal={}",
+                    i + 1, enriched.iv_source, enriched.delta or 0,
+                    enriched.gamma or 0, enriched.moneyness.value,
+                    enriched.days_to_expiry, "FLAGGED" if signal else "none",
+                )
+
+        # Scenario 2: No IBKR Greeks — BS fallback
+        logger.info("--- Scenario 2: BS fallback (no IBKR Greeks) ---")
+        classifier2 = FlowClassifier(settings)
+        for i in range(3):
+            tick2 = TickUpdate(
+                symbol="AAPL", con_id=99002, expiry=future_expiry, strike=200.0, right="C",
+                timestamp=base_time + timedelta(seconds=10, milliseconds=i * 400),
+                bid=8.00, ask=8.50, last=8.40,
+                volume=200 * (i + 1), open_interest=500, last_size=200,
+                underlying_price=200.0,
+                implied_vol=None, delta=None, gamma=None, theta=None, vega=None,
+            )
+            trade2 = classifier2.classify(tick2)
+            if trade2:
+                enriched2 = engine.enrich(trade2)
+                logger.info(
+                    "[S2 tick {}] iv_source={} iv={:.1%} delta={} gamma={} moneyness={}",
+                    i + 1, enriched2.iv_source,
+                    enriched2.implied_vol or 0,
+                    f"{enriched2.delta:.3f}" if enriched2.delta is not None else "None",
+                    f"{enriched2.gamma:.5f}" if enriched2.gamma is not None else "None",
+                    enriched2.moneyness.value,
+                )
+
+        logger.success("Smoke test complete.")
+
+    asyncio.run(main())
