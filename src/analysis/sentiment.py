@@ -4,6 +4,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from config.settings import Settings
+from loguru import logger
 from pydantic import BaseModel
 
 from src.analysis.flow_classifier import Aggressor
@@ -297,3 +298,31 @@ class SentimentAggregator:
             bearish_premium=bearish_premium,
             directional_bias=directional_bias,
         )
+
+    def purge_stale(self, max_age_seconds: float = 3600.0) -> int:
+        """Evict symbols whose most recent trade is older than max_age_seconds.
+
+        Called hourly by the orchestration layer to prevent unbounded memory
+        growth for symbols no longer receiving options flow.
+
+        Note: returns the count of symbols (string keys) evicted, unlike
+        FlowClassifier.purge_stale() and UnusualDetector.purge_stale() which
+        return counts of con_ids (int keys). Do not sum these values together
+        expecting a single unified unit.
+
+        Args:
+            max_age_seconds: Symbols with no trades newer than this are evicted.
+
+        Returns:
+            Number of symbols removed.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        stale = [
+            sym for sym, window in self._windows.items()
+            if not window or window[-1].timestamp < cutoff
+        ]
+        for sym in stale:
+            del self._windows[sym]
+        if stale:
+            logger.info("sentiment: purged {} stale symbols", len(stale))
+        return len(stale)
