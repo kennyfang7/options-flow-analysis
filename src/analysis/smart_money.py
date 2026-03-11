@@ -264,6 +264,9 @@ class SmartMoneyDetector:
         UnusualDetector, and SentimentAggregator, which all expose
         purge_stale() for the orchestration layer to call hourly.
 
+        Args:
+            max_age_seconds: Accepted for interface consistency; ignored.
+
         Returns:
             Always 0.
         """
