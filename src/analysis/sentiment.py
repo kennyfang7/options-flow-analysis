@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from collections import deque
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from collections import deque  # noqa: F401 — used by SentimentAggregator
+from datetime import datetime, timedelta, timezone  # noqa: F401 — timedelta used by SentimentAggregator
 
-from loguru import logger
+from config.settings import Settings  # noqa: F401 — used by SentimentAggregator
+from loguru import logger  # noqa: F401 — used by SentimentAggregator
 from pydantic import BaseModel
 
-from src.analysis.flow_classifier import Aggressor
-from src.analysis.greeks_engine import EnrichedTrade, Moneyness
-
-if TYPE_CHECKING:
-    from config.settings import Settings
+from src.analysis.flow_classifier import Aggressor  # noqa: F401 — used by SentimentAggregator
+from src.analysis.greeks_engine import EnrichedTrade, Moneyness  # noqa: F401 — used by SentimentAggregator
 
 
 class SentimentSnapshot(BaseModel):
