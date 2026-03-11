@@ -213,7 +213,11 @@ def test_trades_outside_window_excluded():
     fresh = anchor                          # at anchor → inside window
     agg.update(make_trade(timestamp=old, right="P", premium=50_000.0, volume_delta=200))
     agg.update(make_trade(timestamp=fresh, right="C", premium=10_000.0, volume_delta=100))
-    # The "old" trade was pruned when the fresh trade arrived (update → _prune(anchor)).
+    # Verify via internal window state: _prune() uses trade.timestamp (not now),
+    # so when the fresh trade (at anchor) is added, _prune(symbol, anchor) runs
+    # and removes any trade older than anchor - 60s = old. This is timestamp-relative,
+    # not wall-clock relative. snapshot() is not called here because it prunes against
+    # now(), which would also remove the pinned-past fresh trade in CI.
     # Verify via the internal window state:
     window = list(agg._windows.get("SPY", []))
     old_still_present = any(t.timestamp == old for t in window)

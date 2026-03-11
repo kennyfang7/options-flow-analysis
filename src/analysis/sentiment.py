@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from collections import deque  # noqa: F401 — used by SentimentAggregator
-from datetime import datetime, timedelta, timezone  # noqa: F401 — timedelta used by SentimentAggregator
+from collections import deque
+from datetime import datetime, timedelta, timezone
 
-from config.settings import Settings  # noqa: F401 — used by SentimentAggregator
-from loguru import logger  # noqa: F401 — used by SentimentAggregator
+from config.settings import Settings
 from pydantic import BaseModel
 
-from src.analysis.flow_classifier import Aggressor  # noqa: F401 — used by SentimentAggregator
-from src.analysis.greeks_engine import EnrichedTrade, Moneyness  # noqa: F401 — used by SentimentAggregator
+from src.analysis.flow_classifier import Aggressor
+from src.analysis.greeks_engine import EnrichedTrade, Moneyness
 
 
 class SentimentSnapshot(BaseModel):
@@ -199,7 +198,7 @@ class SentimentAggregator:
         put_count = 0
 
         for t in window:
-            prem = t.premium or 0.0  # premium=None treated as 0
+            prem = t.premium if t.premium is not None else 0.0  # premium=None treated as 0
             vol = t.volume_delta
             if t.right == "C":
                 call_volume += vol
@@ -259,12 +258,12 @@ class SentimentAggregator:
         # NEUTRAL trades contribute 0 to both (may cause directional_bias=None
         # even when net_premium is non-zero — see class docstring).
         bullish_premium = sum(
-            t.premium or 0.0 for t in window
+            (t.premium if t.premium is not None else 0.0) for t in window
             if (t.right == "C" and t.aggressor == Aggressor.BUY)
             or (t.right == "P" and t.aggressor == Aggressor.SELL)
         )
         bearish_premium = sum(
-            t.premium or 0.0 for t in window
+            (t.premium if t.premium is not None else 0.0) for t in window
             if (t.right == "P" and t.aggressor == Aggressor.BUY)
             or (t.right == "C" and t.aggressor == Aggressor.SELL)
         )
