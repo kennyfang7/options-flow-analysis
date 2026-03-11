@@ -326,3 +326,75 @@ class SentimentAggregator:
         if stale:
             logger.info("sentiment: purged {} stale symbols", len(stale))
         return len(stale)
+
+
+if __name__ == "__main__":
+    from datetime import date as _date
+    from datetime import datetime, timedelta, timezone
+
+    from config.settings import Settings
+    from src.analysis.flow_classifier import FlowClassifier
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.data.tick_stream import TickUpdate
+
+    settings = Settings(
+        min_premium=100.0,
+        unusual_premium_threshold=50_000.0,
+        unusual_oi_ratio_threshold=0.50,
+        unusual_signal_threshold=5.0,
+        otm_delta_threshold=0.30,
+        otm_premium_threshold=30_000.0,
+        risk_free_rate=0.05,
+        sentiment_window_seconds=3600.0,
+    )
+    classifier = FlowClassifier(settings)
+    engine = GreeksEngine(settings)
+    agg = SentimentAggregator(settings)
+
+    future_expiry = (_date.today() + timedelta(days=90)).strftime("%Y%m%d")
+    base_time = datetime(2026, 3, 11, 14, 30, 0, tzinfo=timezone.utc)
+
+    # 6 trades: mixed calls/puts, aggressors, IV levels
+    trade_specs = [
+        ("SPY", "C", 500.0, 0.25, 0.5,   100, 10_000.0),   # Call BUY  (bullish)
+        ("SPY", "P", 480.0, 0.35, -0.2,  200,  8_000.0),   # Put BUY   (bearish, OTM)
+        ("SPY", "C", 510.0, 0.22, 0.4,   150,  6_000.0),   # Call SELL (bearish)
+        ("SPY", "P", 490.0, 0.32, -0.3,  100,  5_000.0),   # Put SELL  (bullish)
+        ("SPY", "C", 505.0, 0.28, 0.6,   300, 15_000.0),   # Call BUY  (bullish)
+        ("SPY", "P", 475.0, 0.40, -0.15, 250, 12_000.0),   # Put BUY   (bearish, deep OTM)
+    ]
+
+    for i, (sym, right, strike, iv, delta, vol, prem) in enumerate(trade_specs):
+        price = prem / (vol * 100)
+        tick = TickUpdate(
+            symbol=sym, con_id=90000 + i, expiry=future_expiry,
+            strike=strike, right=right,
+            timestamp=base_time + timedelta(seconds=i * 10),
+            bid=price - 0.10, ask=price + 0.10, last=price,
+            volume=vol * (i + 1), open_interest=2000, last_size=vol,
+            underlying_price=500.0, implied_vol=iv, delta=delta,
+            gamma=0.005,
+        )
+        trade = classifier.classify(tick)
+        if trade:
+            enriched = engine.enrich(trade)
+            agg.update(enriched)
+
+    snap = agg.snapshot("SPY")
+    if snap:
+        logger.info("=== Sentiment Snapshot for SPY ===")
+        logger.info("  trades in window : {}", snap.trade_count)
+        logger.info("  calls={} puts={}", snap.call_count, snap.put_count)
+        logger.info("  P/C volume ratio : {}", f"{snap.put_call_volume_ratio:.2f}" if snap.put_call_volume_ratio is not None else "N/A")
+        logger.info("  P/C premium ratio: {}", f"{snap.put_call_premium_ratio:.2f}" if snap.put_call_premium_ratio is not None else "N/A")
+        logger.info("  net_premium      : ${:,.0f}", snap.net_premium)
+        logger.info("  iv_skew          : {}", f"{snap.iv_skew:.4f}" if snap.iv_skew is not None else "N/A")
+        logger.info("  directional_bias : {}", f"{snap.directional_bias:.3f}" if snap.directional_bias is not None else "N/A")
+        logger.info("  net_delta_exp    : {}", f"{snap.net_delta_exposure:,.0f}" if snap.net_delta_exposure is not None else "N/A")
+        logger.info("  net_gamma_exp    : {}", f"{snap.net_gamma_exposure:,.0f}" if snap.net_gamma_exposure is not None else "N/A")
+    else:
+        logger.warning("No snapshot — no qualifying trades produced by classifier.")
+
+    evicted = agg.purge_stale(max_age_seconds=3600.0)
+    logger.info("purge_stale evicted {} symbols", evicted)
+    logger.success("Sentiment smoke test complete.")
