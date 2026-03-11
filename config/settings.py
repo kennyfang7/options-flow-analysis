@@ -100,6 +100,13 @@ class Settings(BaseSettings):
         description="Minimum premium ($) for an OTM contract to flag as OTM_PREMIUM",
     )
 
+    # Sentiment Aggregator
+    sentiment_window_seconds: float = Field(
+        default=3600.0,
+        description="Rolling window (seconds) for sentiment aggregation (default 1 hour)",
+        gt=0,
+    )
+
     # Alert Endpoints
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
     alert_email: str = Field(default="", description="Email address for alert notifications")
