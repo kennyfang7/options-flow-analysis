@@ -77,7 +77,7 @@ def _make_trade(
 def _make_detector(**setting_overrides):
     from src.analysis.smart_money import SmartMoneyDetector
     from config.settings import Settings
-    s = Settings(
+    base = dict(
         min_premium=100.0,
         min_block_size=500,
         unusual_volume_multiplier=3.0,
@@ -85,8 +85,9 @@ def _make_detector(**setting_overrides):
         otm_premium_threshold=100_000.0,
         near_expiry_days=7,
         smart_money_min_confidence=0.30,
-        **setting_overrides,
     )
+    base.update(setting_overrides)
+    s = Settings(**base)
     return SmartMoneyDetector(s)
 
 
@@ -158,3 +159,318 @@ def test_smart_money_reason_enum_values():
     assert SmartMoneyReason.NEAR_EXPIRY_OTM.value == "near_expiry_otm"
     assert SmartMoneyReason.UNUSUAL_VOLUME.value == "unusual_volume"
     assert SmartMoneyReason.LARGE_BLOCK.value == "large_block"
+
+
+# ---------------------------------------------------------------------------
+# Task 2: SmartMoneyDetector — individual checks
+# ---------------------------------------------------------------------------
+
+# --- SWEEP_AGGRESSOR ---
+
+def test_sweep_aggressor_fires_on_sweep_buy():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="buy")
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.SWEEP_AGGRESSOR in sig.reasons
+
+
+def test_sweep_aggressor_fires_on_sweep_sell():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="sell")
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.SWEEP_AGGRESSOR in sig.reasons
+
+
+def test_sweep_aggressor_skips_neutral_aggressor():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="neutral")
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.SWEEP_AGGRESSOR not in sig.reasons
+
+
+def test_sweep_aggressor_skips_non_sweep_trade_type():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="block", aggressor_str="buy")
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.SWEEP_AGGRESSOR not in sig.reasons
+
+
+# --- BIG_OTM_BET ---
+
+def test_big_otm_bet_fires():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        moneyness_str="otm", aggressor_str="buy",
+        premium=150_000.0, volume_delta=1000,
+    )
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.BIG_OTM_BET in sig.reasons
+
+
+def test_big_otm_bet_skips_itm():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        moneyness_str="itm", aggressor_str="buy",
+        premium=150_000.0, volume_delta=1000,
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.BIG_OTM_BET not in sig.reasons
+
+
+def test_big_otm_bet_skips_sell_aggressor():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        moneyness_str="otm", aggressor_str="sell",
+        premium=150_000.0, volume_delta=1000,
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.BIG_OTM_BET not in sig.reasons
+
+
+def test_big_otm_bet_skips_small_premium():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        moneyness_str="otm", aggressor_str="buy",
+        premium=10_000.0, volume_delta=100,
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.BIG_OTM_BET not in sig.reasons
+
+
+def test_big_otm_bet_skips_unknown_moneyness():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        moneyness_str="unknown", aggressor_str="buy",
+        premium=150_000.0, volume_delta=1000,
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.BIG_OTM_BET not in sig.reasons
+
+
+def test_big_otm_bet_skips_none_premium():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(moneyness_str="otm", aggressor_str="buy", premium=None, volume_delta=100)
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.BIG_OTM_BET not in sig.reasons
+
+
+# --- NEAR_EXPIRY_OTM ---
+
+def test_near_expiry_otm_fires():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=5, moneyness_str="otm", aggressor_str="buy",
+    )
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.NEAR_EXPIRY_OTM in sig.reasons
+
+
+def test_near_expiry_otm_fires_at_boundary():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=7, moneyness_str="otm", aggressor_str="buy",
+    )
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.NEAR_EXPIRY_OTM in sig.reasons
+
+
+def test_near_expiry_otm_skips_over_threshold():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=8, moneyness_str="otm", aggressor_str="buy",
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.NEAR_EXPIRY_OTM not in sig.reasons
+
+
+def test_near_expiry_otm_skips_itm():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=5, moneyness_str="itm", aggressor_str="buy",
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.NEAR_EXPIRY_OTM not in sig.reasons
+
+
+def test_near_expiry_otm_skips_unknown_moneyness():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=5, moneyness_str="unknown", aggressor_str="buy",
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.NEAR_EXPIRY_OTM not in sig.reasons
+
+
+def test_near_expiry_otm_skips_sell_aggressor():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        days_to_expiry=5, moneyness_str="otm", aggressor_str="sell",
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.NEAR_EXPIRY_OTM not in sig.reasons
+
+
+# --- UNUSUAL_VOLUME ---
+
+def test_unusual_volume_fires():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    # unusual_volume_multiplier=3.0, min_block_size=500 → threshold=1500
+    trade = _make_trade(volume_delta=1500, aggressor_str="neutral")
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.UNUSUAL_VOLUME in sig.reasons
+
+
+def test_unusual_volume_skips_below_threshold():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(volume_delta=1499, aggressor_str="neutral")
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.UNUSUAL_VOLUME not in sig.reasons
+
+
+# --- LARGE_BLOCK ---
+
+def test_large_block_fires():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        trade_type_str="block", premium=300_000.0, volume_delta=2000,
+    )
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.LARGE_BLOCK in sig.reasons
+
+
+def test_large_block_skips_sweep_type():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(
+        trade_type_str="sweep", aggressor_str="neutral",
+        premium=300_000.0, volume_delta=2000,
+    )
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.LARGE_BLOCK not in sig.reasons
+
+
+def test_large_block_skips_small_premium():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="block", premium=10_000.0, volume_delta=100)
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.LARGE_BLOCK not in sig.reasons
+
+
+def test_large_block_skips_none_premium():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="block", premium=None, volume_delta=2000)
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.LARGE_BLOCK not in sig.reasons
+
+
+# --- Returns None when no reasons fire ---
+
+def test_no_reasons_returns_none():
+    det = _make_detector()
+    trade = _make_trade(
+        trade_type_str="block",
+        aggressor_str="buy",
+        moneyness_str="otm",
+        days_to_expiry=90,
+        premium=10_000.0,
+        volume_delta=100,
+    )
+    sig = det.score(trade)
+    assert sig is None
+
+
+# --- Confidence calculation ---
+
+def test_confidence_single_reason_sweep_aggressor():
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="buy")
+    sig = det.score(trade)
+    assert sig is not None
+    # SWEEP_AGGRESSOR weight = 0.40
+    assert sig.confidence == pytest.approx(0.40)
+
+
+def test_confidence_capped_at_one():
+    det = _make_detector()
+    # SWEEP_AGGRESSOR(0.40)+BIG_OTM_BET(0.45)+NEAR_EXPIRY_OTM(0.35)+UNUSUAL_VOLUME(0.35)=1.55→capped 1.0
+    trade = _make_trade(
+        trade_type_str="sweep", aggressor_str="buy", moneyness_str="otm",
+        days_to_expiry=5, premium=150_000.0, volume_delta=1500,
+    )
+    sig = det.score(trade)
+    assert sig is not None
+    assert sig.confidence == pytest.approx(1.0)
+
+
+def test_confidence_below_min_returns_none():
+    # volume_delta=200 keeps UNUSUAL_VOLUME from firing (200 < 1500 threshold)
+    # Only LARGE_BLOCK fires: confidence=0.30 < min_confidence=0.45 → None
+    det = _make_detector(smart_money_min_confidence=0.45)
+    trade = _make_trade(
+        trade_type_str="block", aggressor_str="neutral",
+        premium=300_000.0, volume_delta=200,
+    )
+    sig = det.score(trade)
+    assert sig is None
+
+
+# --- top_reason priority ---
+
+def test_top_reason_sweep_beats_unusual_volume():
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector()
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="buy", volume_delta=1500)
+    sig = det.score(trade)
+    assert sig is not None
+    assert sig.top_reason == SmartMoneyReason.SWEEP_AGGRESSOR
+
+
+# --- purge_stale ---
+
+def test_purge_stale_always_returns_zero():
+    det = _make_detector()
+    assert det.purge_stale() == 0
+    assert det.purge_stale(max_age_seconds=60.0) == 0
