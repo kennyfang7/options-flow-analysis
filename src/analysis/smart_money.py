@@ -290,6 +290,7 @@ if __name__ == "__main__":
         near_expiry_days=7,
         smart_money_min_confidence=0.30,
         risk_free_rate=0.05,
+        sweep_window_seconds=10.0,  # covers 4s spacing between the 3 sweep ticks
     )
     classifier = FlowClassifier(settings)
     engine = GreeksEngine(settings)
@@ -307,16 +308,17 @@ if __name__ == "__main__":
         ("sweep_buy_otm",   future_expiry, 560.0, "C", 1.00, 1.50, 1.48, 300, 1000, 100, 500.0, 0.30, 0.20),
         # [4] Near-expiry OTM buy — NEAR_EXPIRY_OTM expected
         ("near_expiry_otm", near_expiry,   580.0, "C", 0.50, 0.80, 0.78, 500, 800,  500, 500.0, 0.55, 0.10),
-        # [5] Large block — LARGE_BLOCK expected (2500 * ~1.5 * 100 = $375k)
+        # [5] Large block — LARGE_BLOCK expected (2500 * 1.55 * 100 = $375k)
         ("large_block",     future_expiry, 495.0, "C", 1.40, 1.60, 1.55, 2500, 5000, 2500, 500.0, 0.25, 0.52),
         # [6] Small retail trade — expect None (below all thresholds)
         ("retail_small",    future_expiry, 510.0, "C", 0.50, 0.70, 0.65, 50,  2000,  50,  500.0, 0.22, 0.35),
     ]
 
     results: list[tuple[str, SmartMoneySignal | None]] = []
+    con_ids = [90000, 90000, 90000, 90001, 90002, 90003]  # sweep ticks share con_id
     for i, (label, expiry, strike, right, bid, ask, last, vol, oi, last_size, underlying, iv, delta) in enumerate(scenarios):
         tick = TickUpdate(
-            symbol="SPY", con_id=90000 + i, expiry=expiry,
+            symbol="SPY", con_id=con_ids[i], expiry=expiry,
             strike=strike, right=right,
             timestamp=base_time + timedelta(seconds=i * 2),
             bid=bid, ask=ask, last=last,
