@@ -107,6 +107,20 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    # Smart Money Detector
+    near_expiry_days: int = Field(
+        default=7,
+        description="Days-to-expiry threshold for NEAR_EXPIRY_OTM smart money signal",
+        ge=1,
+        le=90,
+    )
+    smart_money_min_confidence: float = Field(
+        default=0.30,
+        description="Minimum confidence score [0, 1] to emit a SmartMoneySignal. 0.0 emits all signals.",
+        ge=0,
+        le=1.0,
+    )
+
     # Alert Endpoints
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
     alert_email: str = Field(default="", description="Email address for alert notifications")
