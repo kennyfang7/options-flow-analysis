@@ -271,3 +271,81 @@ class SmartMoneyDetector:
             Always 0.
         """
         return 0
+
+
+if __name__ == "__main__":
+    from datetime import date as _date, timedelta
+
+    from config.settings import Settings
+    from src.analysis.flow_classifier import FlowClassifier
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.data.tick_stream import TickUpdate
+
+    settings = Settings(
+        min_premium=100.0,
+        min_block_size=500,
+        unusual_volume_multiplier=3.0,
+        unusual_premium_threshold=250_000.0,
+        otm_premium_threshold=100_000.0,
+        near_expiry_days=7,
+        smart_money_min_confidence=0.30,
+        risk_free_rate=0.05,
+    )
+    classifier = FlowClassifier(settings)
+    engine = GreeksEngine(settings)
+    detector = SmartMoneyDetector(settings)
+
+    future_expiry = (_date.today() + timedelta(days=90)).strftime("%Y%m%d")
+    near_expiry = (_date.today() + timedelta(days=4)).strftime("%Y%m%d")
+    base_time = datetime(2026, 3, 11, 14, 30, 0, tzinfo=timezone.utc)
+
+    # (label, expiry, strike, right, bid, ask, last, volume, oi, last_size, underlying, iv, delta)
+    scenarios = [
+        # [1-3] Sweep of 3 rapid OTM call buys — third tick should be SWEEP_AGGRESSOR
+        ("sweep_buy_otm",   future_expiry, 560.0, "C", 1.00, 1.50, 1.48, 100, 1000, 100, 500.0, 0.30, 0.20),
+        ("sweep_buy_otm",   future_expiry, 560.0, "C", 1.00, 1.50, 1.48, 200, 1000, 100, 500.0, 0.30, 0.20),
+        ("sweep_buy_otm",   future_expiry, 560.0, "C", 1.00, 1.50, 1.48, 300, 1000, 100, 500.0, 0.30, 0.20),
+        # [4] Near-expiry OTM buy — NEAR_EXPIRY_OTM expected
+        ("near_expiry_otm", near_expiry,   580.0, "C", 0.50, 0.80, 0.78, 500, 800,  500, 500.0, 0.55, 0.10),
+        # [5] Large block — LARGE_BLOCK expected (2500 * ~1.5 * 100 = $375k)
+        ("large_block",     future_expiry, 495.0, "C", 1.40, 1.60, 1.55, 2500, 5000, 2500, 500.0, 0.25, 0.52),
+        # [6] Small retail trade — expect None (below all thresholds)
+        ("retail_small",    future_expiry, 510.0, "C", 0.50, 0.70, 0.65, 50,  2000,  50,  500.0, 0.22, 0.35),
+    ]
+
+    results: list[tuple[str, SmartMoneySignal | None]] = []
+    for i, (label, expiry, strike, right, bid, ask, last, vol, oi, last_size, underlying, iv, delta) in enumerate(scenarios):
+        tick = TickUpdate(
+            symbol="SPY", con_id=90000 + i, expiry=expiry,
+            strike=strike, right=right,
+            timestamp=base_time + timedelta(seconds=i * 2),
+            bid=bid, ask=ask, last=last,
+            volume=vol, open_interest=oi, last_size=last_size,
+            underlying_price=underlying, implied_vol=iv, delta=delta,
+        )
+        trade = classifier.classify(tick)
+        if trade:
+            enriched = engine.enrich(trade)
+            sig = detector.score(enriched)
+            results.append((label, sig))
+            logger.info(
+                "[{}] type={} moneyness={} dte={} | smart_money={} top={} conf={}",
+                label,
+                enriched.trade_type.value,
+                enriched.moneyness.value,
+                enriched.days_to_expiry,
+                "FLAGGED" if sig else "none",
+                sig.top_reason.value if sig else "-",
+                f"{sig.confidence:.2f}" if sig else "-",
+            )
+        else:
+            results.append((label, None))
+            logger.info("[{}] → trade below min_premium threshold", label)
+
+    evicted = detector.purge_stale()
+    logger.info("purge_stale evicted {} (always 0 — stateless)", evicted)
+    flagged = sum(1 for _, s in results if s is not None)
+    logger.success(
+        "Smoke test complete. {} scenarios processed → {} flagged as smart money.",
+        len(results), flagged,
+    )
