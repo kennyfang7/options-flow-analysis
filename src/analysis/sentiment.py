@@ -95,3 +95,206 @@ class SentimentSnapshot(BaseModel):
     bullish_premium: float
     bearish_premium: float
     directional_bias: float | None
+
+
+_AGGRESSOR_SIGN: dict[Aggressor, float] = {
+    Aggressor.BUY: 1.0,
+    Aggressor.SELL: -1.0,
+    Aggressor.NEUTRAL: 0.0,
+}
+
+
+class SentimentAggregator:
+    """Rolling-window sentiment aggregator for options flow.
+
+    Maintains a per-symbol deque of EnrichedTrade objects. Trades older
+    than `sentiment_window_seconds` are automatically pruned on each
+    update() or snapshot() call.
+
+    **Timestamp ordering:** update() prunes against trade.timestamp. Trades
+    must arrive in non-decreasing timestamp order. Out-of-order ticks will
+    survive until the next snapshot() call (which always prunes against now).
+
+    update() is synchronous and performs no IO. snapshot() computes
+    metrics on demand from the live window.
+
+    The orchestration layer should call purge_stale() hourly to free
+    memory for symbols that have stopped receiving flow.
+
+    Note: purge_stale() evicts per symbol (string keys), while
+    FlowClassifier.purge_stale() and UnusualDetector.purge_stale() evict
+    per con_id (int keys). Their return values count different unit types.
+
+    Example:
+        agg = SentimentAggregator(settings)
+        agg.update(enriched_trade)
+        snap = agg.snapshot("SPY")
+        if snap:
+            logger.info("SPY P/C ratio: {}", snap.put_call_volume_ratio)
+
+    Args:
+        settings: Application settings (uses sentiment_window_seconds).
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._windows: dict[str, deque[EnrichedTrade]] = {}
+
+    def update(self, trade: EnrichedTrade) -> None:
+        """Add an EnrichedTrade to the rolling window and prune expired entries.
+
+        Prunes using trade.timestamp as reference. Assumes trades arrive in
+        non-decreasing timestamp order.
+
+        Args:
+            trade: EnrichedTrade from GreeksEngine.enrich().
+        """
+        symbol = trade.symbol
+        if symbol not in self._windows:
+            self._windows[symbol] = deque()
+        self._windows[symbol].append(trade)
+        self._prune(symbol, trade.timestamp)
+
+    def _prune(self, symbol: str, reference_time: datetime) -> None:
+        """Remove trades older than sentiment_window_seconds from the deque.
+
+        Args:
+            symbol: Symbol whose window to prune.
+            reference_time: Timestamp to prune against. Typically trade.timestamp
+                from update() or datetime.now(timezone.utc) from snapshot().
+        """
+        cutoff = reference_time - timedelta(seconds=self._settings.sentiment_window_seconds)
+        window = self._windows[symbol]
+        while window and window[0].timestamp < cutoff:
+            window.popleft()
+
+    def snapshot(self, symbol: str) -> SentimentSnapshot | None:
+        """Compute current sentiment metrics for a symbol.
+
+        Prunes expired entries against datetime.now() before computing.
+        Returns None if the symbol has no trades in the current window.
+
+        Args:
+            symbol: Underlying ticker to aggregate (e.g. "SPY").
+
+        Returns:
+            SentimentSnapshot with all metrics populated, or None if no data.
+        """
+        if symbol not in self._windows:
+            return None
+
+        now = datetime.now(timezone.utc)
+        self._prune(symbol, now)
+
+        window = list(self._windows[symbol])
+        if not window:
+            return None
+
+        # --- Volume / premium breakdown ---
+        call_volume = 0
+        put_volume = 0
+        call_premium = 0.0
+        put_premium = 0.0
+        call_count = 0
+        put_count = 0
+
+        for t in window:
+            prem = t.premium or 0.0  # premium=None treated as 0
+            vol = t.volume_delta
+            if t.right == "C":
+                call_volume += vol
+                call_premium += prem
+                call_count += 1
+            else:
+                put_volume += vol
+                put_premium += prem
+                put_count += 1
+
+        # --- Ratios ---
+        put_call_volume_ratio = (put_volume / call_volume) if call_volume > 0 else None
+        put_call_premium_ratio = (put_premium / call_premium) if call_premium > 0 else None
+        net_premium = call_premium - put_premium
+
+        # --- IV skew (OTM-only, unweighted mean — rough proxy) ---
+        otm_call_ivs = [
+            t.implied_vol for t in window
+            if t.right == "C"
+            and t.moneyness == Moneyness.OTM
+            and t.implied_vol is not None
+        ]
+        otm_put_ivs = [
+            t.implied_vol for t in window
+            if t.right == "P"
+            and t.moneyness == Moneyness.OTM
+            and t.implied_vol is not None
+        ]
+        avg_call_iv = sum(otm_call_ivs) / len(otm_call_ivs) if otm_call_ivs else None
+        avg_put_iv = sum(otm_put_ivs) / len(otm_put_ivs) if otm_put_ivs else None
+        iv_skew = (
+            (avg_put_iv - avg_call_iv)
+            if avg_call_iv is not None and avg_put_iv is not None
+            else None
+        )
+
+        # --- Delta / gamma exposure ---
+        delta_contributions: list[float] = []
+        gamma_contributions: list[float] = []
+        for t in window:
+            sign = _AGGRESSOR_SIGN[t.aggressor]
+            if sign == 0.0:
+                continue
+            if t.delta is not None:
+                delta_contributions.append(t.delta * sign * t.volume_delta * 100)
+            if t.gamma is not None and t.underlying_price is not None:
+                # Dealer is short gamma when client buys (sign → -sign for dealer)
+                gamma_contributions.append(
+                    -t.gamma * sign * t.volume_delta * 100 * t.underlying_price
+                )
+
+        net_delta_exposure = sum(delta_contributions) if delta_contributions else None
+        net_gamma_exposure = sum(gamma_contributions) if gamma_contributions else None
+
+        # --- Directional bias ---
+        # Bullish: call BUY + put SELL. Bearish: put BUY + call SELL.
+        # NEUTRAL trades contribute 0 to both (may cause directional_bias=None
+        # even when net_premium is non-zero — see class docstring).
+        bullish_premium = sum(
+            t.premium or 0.0 for t in window
+            if (t.right == "C" and t.aggressor == Aggressor.BUY)
+            or (t.right == "P" and t.aggressor == Aggressor.SELL)
+        )
+        bearish_premium = sum(
+            t.premium or 0.0 for t in window
+            if (t.right == "P" and t.aggressor == Aggressor.BUY)
+            or (t.right == "C" and t.aggressor == Aggressor.SELL)
+        )
+        total_directional = bullish_premium + bearish_premium
+        directional_bias = (
+            (bullish_premium - bearish_premium) / total_directional
+            if total_directional > 0
+            else None
+        )
+
+        return SentimentSnapshot(
+            symbol=symbol,
+            window_seconds=self._settings.sentiment_window_seconds,
+            computed_at=now,
+            trade_count=len(window),
+            call_volume=call_volume,
+            put_volume=put_volume,
+            call_premium=call_premium,
+            put_premium=put_premium,
+            call_count=call_count,
+            put_count=put_count,
+            put_call_volume_ratio=put_call_volume_ratio,
+            put_call_premium_ratio=put_call_premium_ratio,
+            net_premium=net_premium,
+            avg_call_iv=avg_call_iv,
+            avg_put_iv=avg_put_iv,
+            iv_skew=iv_skew,
+            net_delta_exposure=net_delta_exposure,
+            net_gamma_exposure=net_gamma_exposure,
+            bullish_premium=bullish_premium,
+            bearish_premium=bearish_premium,
+            directional_bias=directional_bias,
+        )
