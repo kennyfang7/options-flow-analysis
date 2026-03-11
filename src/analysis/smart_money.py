@@ -64,6 +64,10 @@ _PRIORITY: list[SmartMoneyReason] = [
     SmartMoneyReason.LARGE_BLOCK,
 ]
 
+assert set(_CONFIDENCE_WEIGHTS) == set(SmartMoneyReason), (
+    "_CONFIDENCE_WEIGHTS must contain an entry for every SmartMoneyReason"
+)
+
 
 # ---------------------------------------------------------------------------
 # Output model
@@ -146,4 +150,9 @@ class SmartMoneyDetector:
     """
 
     def __init__(self, settings: Settings) -> None:
+        """Store settings for threshold comparisons in score().
+
+        Args:
+            settings: Application settings with smart money thresholds.
+        """
         self._settings = settings
