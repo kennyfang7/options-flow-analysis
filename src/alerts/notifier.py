@@ -114,3 +114,81 @@ class Notifier:
             "notifier: email to {} not implemented — configure Discord for now",
             self._settings.alert_email,
         )
+
+
+if __name__ == "__main__":
+    from datetime import date as _date, timedelta
+
+    from src.analysis.flow_classifier import FlowClassifier
+    from src.analysis.greeks_engine import GreeksEngine
+    from src.analysis.smart_money import SmartMoneyDetector
+    from src.analysis.unusual_detector import UnusualDetector
+    from src.alerts.rules import AlertRules
+    from src.data.tick_stream import TickUpdate
+
+    async def _main() -> None:
+        settings = Settings(
+            min_premium=100.0,
+            min_block_size=500,
+            unusual_volume_multiplier=3.0,
+            unusual_premium_threshold=250_000.0,
+            otm_premium_threshold=100_000.0,
+            near_expiry_days=7,
+            smart_money_min_confidence=0.30,
+            risk_free_rate=0.05,
+            # Leave discord_webhook_url empty so smoke test doesn't fire a real webhook
+            discord_webhook_url="",
+        )
+
+        classifier = FlowClassifier(settings)
+        engine = GreeksEngine(settings)
+        detector = UnusualDetector(settings)
+        smart = SmartMoneyDetector(settings)
+        rules = AlertRules(settings)
+        notifier = Notifier(settings)
+
+        future_expiry = (_date.today() + timedelta(days=60)).strftime("%Y%m%d")
+        base_time = datetime.now(timezone.utc)
+
+        # Scenario: big block buy that triggers PREMIUM_SIZE
+        tick = TickUpdate(
+            symbol="SPY", con_id=91000, expiry=future_expiry,
+            strike=500.0, right="C",
+            timestamp=base_time,
+            bid=1.38, ask=1.62, last=1.60,
+            volume=2000, open_interest=3000, last_size=2000,
+            underlying_price=500.0, implied_vol=0.25, delta=0.45,
+        )
+        trade = classifier.classify(tick)
+        alerts_sent = 0
+        if trade:
+            enriched = engine.enrich(trade)
+            unusual_sig = await detector.detect(enriched)
+            smart_sig = smart.score(enriched)
+
+            if unusual_sig:
+                alert = rules.evaluate_unusual(unusual_sig)
+                logger.info(
+                    "[unusual] {} level={} title={}",
+                    unusual_sig.symbol, alert.level.value, alert.title,
+                )
+                await notifier.send(alert)
+                alerts_sent += 1
+
+            if smart_sig:
+                alert = rules.evaluate_smart_money(smart_sig)
+                logger.info(
+                    "[smart_money] {} level={} conf={:.0%} title={}",
+                    smart_sig.symbol, alert.level.value, smart_sig.confidence, alert.title,
+                )
+                await notifier.send(alert)
+                alerts_sent += 1
+        else:
+            logger.info("trade below min_premium threshold — no alerts")
+
+        logger.success(
+            "Smoke test complete. {} alert(s) evaluated (discord skipped — no webhook configured).",
+            alerts_sent,
+        )
+
+    asyncio.run(_main())
