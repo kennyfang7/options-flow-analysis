@@ -8,7 +8,6 @@ from loguru import logger
 from pydantic import BaseModel
 
 from config.settings import Settings
-from src.analysis.flow_classifier import Aggressor, TradeType
 from src.analysis.smart_money import SmartMoneySignal
 from src.analysis.unusual_detector import UnusualReason, UnusualSignal
 
@@ -160,12 +159,13 @@ class AlertRules:
             ),
         ]
 
+        premium_str = f"{signal.premium:,.0f}" if signal.premium is not None else "N/A"
         logger.debug(
             "evaluate_unusual: {} {} level={} premium={}",
             signal.symbol,
             signal.top_reason.value,
             level.value,
-            f"{signal.premium:,.0f}" if signal.premium is not None else "N/A",
+            premium_str,
         )
 
         return Alert(
