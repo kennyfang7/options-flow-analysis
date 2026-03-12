@@ -62,7 +62,7 @@ def make_tick(**overrides) -> TickUpdate:
         expiry="20260320",
         strike=500.0,
         right="C",
-        timestamp=datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=2.00,
         ask=2.50,
         last=2.45,

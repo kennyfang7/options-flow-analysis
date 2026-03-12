@@ -276,7 +276,6 @@ class SmartMoneyDetector:
 if __name__ == "__main__":
     from datetime import date as _date, timedelta
 
-    from config.settings import Settings
     from src.analysis.flow_classifier import FlowClassifier
     from src.analysis.greeks_engine import GreeksEngine
     from src.data.tick_stream import TickUpdate
@@ -290,7 +289,7 @@ if __name__ == "__main__":
         near_expiry_days=7,
         smart_money_min_confidence=0.30,
         risk_free_rate=0.05,
-        sweep_window_seconds=10.0,  # covers 4s spacing between the 3 sweep ticks
+        sweep_window_seconds=10.0,  # total span from tick 0 to tick 2 is 4s; default 2.0s would drop tick 0
     )
     classifier = FlowClassifier(settings)
     engine = GreeksEngine(settings)

@@ -79,7 +79,7 @@ def make_trade(
     from src.analysis.flow_classifier import TradeType, Aggressor
     from src.data.tick_stream import TickUpdate
 
-    ts = timestamp or datetime(2026, 3, 11, 14, 30, tzinfo=timezone.utc)
+    ts = timestamp if timestamp is not None else datetime.now(timezone.utc)
 
     aggressor_map = {"buy": Aggressor.BUY, "sell": Aggressor.SELL, "neutral": Aggressor.NEUTRAL}
     moneyness_map = {
