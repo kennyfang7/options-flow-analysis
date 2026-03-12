@@ -105,6 +105,11 @@ class Notifier:
         Logs an info message when alert_email is configured, then returns.
         Full SMTP implementation deferred to a future iteration.
 
+        Note:
+            When implementing SMTP, wrap the blocking smtplib call in
+            ``asyncio.to_thread(self._send_email, alert)`` at the
+            ``send()`` call site to avoid blocking the event loop.
+
         Args:
             alert: Alert to (not yet) deliver by email.
         """

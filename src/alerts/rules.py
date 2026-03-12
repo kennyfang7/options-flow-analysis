@@ -40,6 +40,10 @@ _UNUSUAL_LEVEL: dict[UnusualReason, AlertLevel] = {
     UnusualReason.SIGNAL_STRENGTH: AlertLevel.LOW,
 }
 
+assert set(_UNUSUAL_LEVEL) == set(UnusualReason), (
+    "_UNUSUAL_LEVEL must contain an entry for every UnusualReason"
+)
+
 
 # ---------------------------------------------------------------------------
 # Output model
