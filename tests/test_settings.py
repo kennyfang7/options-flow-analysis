@@ -53,3 +53,22 @@ def test_dashboard_max_rows_must_be_at_least_one():
             unusual_premium_threshold=200.0,
             dashboard_max_rows=0,
         )
+
+
+def test_scanner_max_rows_default() -> None:
+    from config.settings import Settings
+    s = Settings()
+    assert s.scanner_max_rows == 25
+
+
+def test_scanner_max_rows_too_large_raises() -> None:
+    import pytest
+    from config.settings import Settings
+    with pytest.raises(Exception):
+        Settings(scanner_max_rows=51)
+
+
+def test_scanner_location_default() -> None:
+    from config.settings import Settings
+    s = Settings()
+    assert s.scanner_location == "STK.US.MAJOR"

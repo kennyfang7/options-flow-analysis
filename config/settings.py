@@ -147,6 +147,18 @@ class Settings(BaseSettings):
         description="Maximum alerts to accumulate in SharedState queue and alerts panel",
     )
 
+    # Scanner
+    scanner_max_rows: int = Field(
+        default=25,
+        ge=1,
+        le=50,
+        description="Maximum results per scanner subscription call",
+    )
+    scanner_location: str = Field(
+        default="STK.US.MAJOR",
+        description="IBKR location code for scanner (e.g. STK.US.MAJOR)",
+    )
+
     @field_validator("min_premium")
     @classmethod
     def min_premium_must_be_positive(cls, v: float) -> float:
