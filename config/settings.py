@@ -125,6 +125,28 @@ class Settings(BaseSettings):
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
     alert_email: str = Field(default="", description="Email address for alert notifications")
 
+    # Dashboard
+    dashboard_refresh_fast: float = Field(
+        default=5.0,
+        gt=0,
+        description="Sentiment and alerts panel refresh interval in seconds",
+    )
+    dashboard_refresh_slow: float = Field(
+        default=10.0,
+        gt=0,
+        description="DB table (signals, trades) refresh interval in seconds",
+    )
+    dashboard_max_rows: int = Field(
+        default=50,
+        ge=1,
+        description="Maximum rows to display in each DB-backed DataTable",
+    )
+    dashboard_max_alerts: int = Field(
+        default=200,
+        ge=1,
+        description="Maximum alerts to accumulate in SharedState queue and alerts panel",
+    )
+
     @field_validator("min_premium")
     @classmethod
     def min_premium_must_be_positive(cls, v: float) -> float:

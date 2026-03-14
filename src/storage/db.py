@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from loguru import logger
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -51,6 +53,69 @@ def make_engine(database_url: str | None = None) -> AsyncEngine:
     return create_async_engine(url, echo=False)
 
 
+def _strip_async_prefix(url: str) -> str:
+    """Remove async driver prefix from a SQLAlchemy URL string.
+
+    Inverse of _adapt_url(). Used to build a synchronous engine URL
+    from the same database_url setting used by the async engine.
+
+    Args:
+        url: A SQLAlchemy URL, possibly with an async driver prefix.
+
+    Returns:
+        URL with any async driver prefix removed. Unrecognised driver
+        prefixes are passed through unchanged.
+    """
+    return (
+        url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+           .replace("postgresql+asyncpg://", "postgresql://", 1)
+    )
+
+
+def make_sync_engine(database_url: str | None = None) -> Engine:
+    """Create a synchronous SQLAlchemy engine from the given URL or settings.
+
+    Used by Dash callbacks (Flask/sync context) to query the same database
+    as the async engine without conflicting connection pool settings.
+    SQLAlchemy models are engine-agnostic and work identically with both.
+
+    Args:
+        database_url: Optional explicit URL. If None, reads from settings.
+
+    Returns:
+        A configured synchronous Engine instance.
+    """
+    if database_url is None:
+        from config.settings import settings
+        database_url = settings.database_url
+
+    url = _strip_async_prefix(_adapt_url(database_url))
+    logger.debug("Creating sync engine: {}", url)
+    return create_engine(url, echo=False)
+
+
+_sync_engine_lock = threading.Lock()
+_sync_engine: Engine | None = None
+
+
+def get_sync_engine() -> Engine:
+    """Return the module-level synchronous engine singleton.
+
+    Created lazily on first call. Thread-safe via double-checked locking —
+    safe to call concurrently from Flask/Dash worker threads.
+    Used exclusively by Dash callbacks for read-only DB queries.
+
+    Returns:
+        The shared synchronous Engine instance.
+    """
+    global _sync_engine
+    if _sync_engine is None:
+        with _sync_engine_lock:
+            if _sync_engine is None:
+                _sync_engine = make_sync_engine()
+    return _sync_engine
+
+
 # Module-level singletons — created lazily on first use so that
 # importing this module never touches the database or settings at test time.
 _engine: AsyncEngine | None = None
@@ -83,6 +148,9 @@ async def init_db(engine: AsyncEngine | None = None) -> None:
     e = engine or _get_engine()
     async with e.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if str(e.url).startswith("sqlite"):
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
+            logger.debug("init_db: SQLite WAL mode enabled")
     logger.info("init_db: all tables created/verified")
 
 
