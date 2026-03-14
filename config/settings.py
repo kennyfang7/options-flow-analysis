@@ -152,7 +152,10 @@ class Settings(BaseSettings):
         default=25,
         ge=1,
         le=50,
-        description="Maximum results per scanner subscription call",
+        description=(
+            "Maximum results per scanner subscription call. "
+            "IBKR hard limit is 50; values above that are rejected by TWS."
+        ),
     )
     scanner_location: str = Field(
         default="STK.US.MAJOR",
@@ -205,6 +208,16 @@ class Settings(BaseSettings):
     def unusual_signal_threshold_must_be_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("unusual_signal_threshold must be greater than 0")
+        return v
+
+    @field_validator("scanner_location")
+    @classmethod
+    def scanner_location_must_be_dot_separated(cls, v: str) -> str:
+        """Ensure scanner_location follows IBKR dot-notation (e.g. STK.US.MAJOR)."""
+        if not v or "." not in v:
+            raise ValueError(
+                "scanner_location must follow IBKR dot-notation, e.g. 'STK.US.MAJOR'"
+            )
         return v
 
 

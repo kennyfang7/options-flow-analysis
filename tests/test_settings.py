@@ -63,12 +63,29 @@ def test_scanner_max_rows_default() -> None:
 
 def test_scanner_max_rows_too_large_raises() -> None:
     import pytest
+    from pydantic import ValidationError
     from config.settings import Settings
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Settings(scanner_max_rows=51)
+
+
+def test_scanner_max_rows_too_small_raises() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from config.settings import Settings
+    with pytest.raises(ValidationError):
+        Settings(scanner_max_rows=0)
 
 
 def test_scanner_location_default() -> None:
     from config.settings import Settings
     s = Settings()
     assert s.scanner_location == "STK.US.MAJOR"
+
+
+def test_scanner_location_invalid_raises() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from config.settings import Settings
+    with pytest.raises(ValidationError):
+        Settings(scanner_location="INVALID")
