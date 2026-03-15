@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -118,3 +118,51 @@ def test_parse_scan_data_empty_strings_become_none(mock_ibkr_client: MagicMock) 
     assert result.distance is None
     assert result.benchmark is None
     assert result.projection is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: MarketScanner.scan()
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scan_returns_parsed_results(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(
+        return_value=[
+            _make_scan_data(rank=1, symbol="SPY"),
+            _make_scan_data(rank=2, symbol="AAPL"),
+        ]
+    )
+    scanner = MarketScanner(mock_ibkr_client)
+    results = await scanner.scan(SCAN_UNUSUAL_VOLUME)
+
+    assert len(results) == 2
+    assert results[0].rank == 1
+    assert results[0].symbol == "SPY"
+    assert results[0].scan_code == SCAN_UNUSUAL_VOLUME
+    assert results[1].symbol == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_scan_empty_results(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(return_value=[])
+    scanner = MarketScanner(mock_ibkr_client)
+    results = await scanner.scan(SCAN_TOP_IV_GAINERS)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_scan_passes_correct_subscription_params(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(return_value=[])
+    scanner = MarketScanner(mock_ibkr_client)
+    await scanner.scan(
+        SCAN_HOT_BY_VOLUME,
+        instrument="OPT",
+        location="STK.US.MAJOR",
+        n_rows=10,
+    )
+    call_args = mock_ibkr_client.ib.reqScannerSubscriptionAsync.call_args
+    sub = call_args[0][0]  # positional arg 0
+    assert sub.scanCode == SCAN_HOT_BY_VOLUME
+    assert sub.instrument == "OPT"
+    assert sub.locationCode == "STK.US.MAJOR"
+    assert sub.numberOfRows == 10

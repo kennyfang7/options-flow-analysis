@@ -96,6 +96,51 @@ class MarketScanner:
         self._ib = client.ib
 
     # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    async def scan(
+        self,
+        scan_code: str,
+        *,
+        instrument: str = "OPT",
+        location: str = "STK.US.MAJOR",
+        n_rows: int = 25,
+    ) -> list[ScannerResult]:
+        """Run an IBKR scanner subscription and return structured results.
+
+        Calls reqScannerSubscriptionAsync with the given parameters and
+        parses each ScanData entry into a ScannerResult.
+
+        Args:
+            scan_code: IBKR scan code (e.g. SCAN_UNUSUAL_VOLUME).
+            instrument: Instrument type (default "OPT" for options).
+            location: IBKR location code (default "STK.US.MAJOR").
+            n_rows: Maximum number of results to return (default 25).
+
+        Returns:
+            List of ScannerResult sorted by rank ascending (as returned by IBKR).
+        """
+        from ib_insync import ScannerSubscription
+
+        sub = ScannerSubscription(
+            instrument=instrument,
+            locationCode=location,
+            scanCode=scan_code,
+            numberOfRows=n_rows,
+        )
+        logger.info(
+            "scan: running {} (instrument={}, location={}, n_rows={})",
+            scan_code, instrument, location, n_rows,
+        )
+
+        raw_results = await self._ib.reqScannerSubscriptionAsync(sub)
+        results = [self._parse_scan_data(r, scan_code=scan_code) for r in raw_results]
+
+        logger.info("scan: {} returned {} results", scan_code, len(results))
+        return results
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
