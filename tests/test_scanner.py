@@ -201,3 +201,28 @@ async def test_scan_hot_by_volume_calls_correct_code(mock_ibkr_client: MagicMock
     sub = mock_ibkr_client.ib.reqScannerSubscriptionAsync.call_args[0][0]
     assert sub.scanCode == SCAN_HOT_BY_VOLUME
     assert sub.numberOfRows == 10
+
+
+# ---------------------------------------------------------------------------
+# Integration test (requires live TWS/Gateway)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_scan_unusual_volume_live() -> None:
+    """Smoke test against live TWS.
+
+    Run with: pytest -m integration
+    """
+    from src.connection.ibkr_client import IBKRClient
+
+    async with IBKRClient() as client:
+        scanner = MarketScanner(client)
+        results = await scanner.scan_unusual_volume(n_rows=5)
+
+    assert isinstance(results, list)
+    assert len(results) <= 5
+    for r in results:
+        assert r.symbol
+        assert r.scan_code == SCAN_UNUSUAL_VOLUME
+        assert r.rank >= 1

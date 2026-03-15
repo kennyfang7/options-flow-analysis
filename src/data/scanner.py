@@ -227,3 +227,30 @@ class MarketScanner:
             scan_code=scan_code,
             scanned_at=datetime.now(timezone.utc),
         )
+
+
+# ---------------------------------------------------------------------------
+# Standalone smoke test (requires live TWS on port 7496/7497)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import asyncio
+    from src.connection.ibkr_client import IBKRClient
+
+    async def _main() -> None:
+        async with IBKRClient() as client:
+            scanner = MarketScanner(client)
+
+            logger.info("Running scan_unusual_volume (top 10)...")
+            results = await scanner.scan_unusual_volume(n_rows=10)
+            print(f"\nTop {len(results)} Unusual Option Volume")
+            for r in results:
+                print(f"  [{r.rank:2d}] {r.symbol:<8} | scan={r.scan_code} | conId={r.con_id}")
+
+            logger.info("Running scan_top_iv_gainers (top 10)...")
+            results = await scanner.scan_top_iv_gainers(n_rows=10)
+            print(f"\nTop {len(results)} IV Gainers")
+            for r in results:
+                print(f"  [{r.rank:2d}] {r.symbol:<8} | {r.description}")
+
+    asyncio.run(_main())
