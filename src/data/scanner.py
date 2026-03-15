@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+
+from loguru import logger
 
 from pydantic import BaseModel, field_validator
 
@@ -92,3 +94,37 @@ class MarketScanner:
         """
         self._client = client
         self._ib = client.ib
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _parse_scan_data(self, raw: object, *, scan_code: str) -> ScannerResult:
+        """Parse a raw ib_insync ScanData object into a ScannerResult.
+
+        Normalizes empty strings to None and converts conId=0 to None.
+
+        Args:
+            raw: A single ScanData entry from reqScannerSubscriptionAsync.
+            scan_code: The IBKR scan code that produced this result.
+
+        Returns:
+            ScannerResult with all available fields populated.
+        """
+        cd = raw.contractDetails
+        c = cd.contract
+
+        def _opt_str(v: str) -> str | None:
+            return v if v else None
+
+        return ScannerResult(
+            rank=raw.rank,
+            symbol=c.symbol,
+            con_id=c.conId or None,
+            description=getattr(c, "localSymbol", "") or "",
+            distance=_opt_str(raw.distance),
+            benchmark=_opt_str(raw.benchmark),
+            projection=_opt_str(raw.projection),
+            scan_code=scan_code,
+            scanned_at=datetime.now(timezone.utc),
+        )
