@@ -166,3 +166,38 @@ async def test_scan_passes_correct_subscription_params(mock_ibkr_client: MagicMo
     assert sub.instrument == "OPT"
     assert sub.locationCode == "STK.US.MAJOR"
     assert sub.numberOfRows == 10
+
+
+# ---------------------------------------------------------------------------
+# Tests: convenience methods
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scan_unusual_volume_calls_correct_code(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(
+        return_value=[_make_scan_data(rank=1, symbol="SPY")]
+    )
+    scanner = MarketScanner(mock_ibkr_client)
+    results = await scanner.scan_unusual_volume()
+    sub = mock_ibkr_client.ib.reqScannerSubscriptionAsync.call_args[0][0]
+    assert sub.scanCode == SCAN_UNUSUAL_VOLUME
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_top_iv_gainers_calls_correct_code(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(return_value=[])
+    scanner = MarketScanner(mock_ibkr_client)
+    await scanner.scan_top_iv_gainers()
+    sub = mock_ibkr_client.ib.reqScannerSubscriptionAsync.call_args[0][0]
+    assert sub.scanCode == SCAN_TOP_IV_GAINERS
+
+
+@pytest.mark.asyncio
+async def test_scan_hot_by_volume_calls_correct_code(mock_ibkr_client: MagicMock) -> None:
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(return_value=[])
+    scanner = MarketScanner(mock_ibkr_client)
+    await scanner.scan_hot_by_volume(n_rows=10)
+    sub = mock_ibkr_client.ib.reqScannerSubscriptionAsync.call_args[0][0]
+    assert sub.scanCode == SCAN_HOT_BY_VOLUME
+    assert sub.numberOfRows == 10

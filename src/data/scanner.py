@@ -140,6 +140,60 @@ class MarketScanner:
         logger.info("scan: {} returned {} results", scan_code, len(results))
         return results
 
+    async def scan_unusual_volume(
+        self,
+        n_rows: int = 25,
+        location: str = "STK.US.MAJOR",
+    ) -> list[ScannerResult]:
+        """Scan for options with the highest volume today.
+
+        Wraps scan() with scan_code=SCAN_UNUSUAL_VOLUME.
+
+        Args:
+            n_rows: Maximum number of results (default 25).
+            location: IBKR location code (default "STK.US.MAJOR").
+
+        Returns:
+            List of ScannerResult ranked by option volume.
+        """
+        return await self.scan(SCAN_UNUSUAL_VOLUME, n_rows=n_rows, location=location)
+
+    async def scan_top_iv_gainers(
+        self,
+        n_rows: int = 25,
+        location: str = "STK.US.MAJOR",
+    ) -> list[ScannerResult]:
+        """Scan for options with the largest implied volatility increase today.
+
+        Wraps scan() with scan_code=SCAN_TOP_IV_GAINERS.
+
+        Args:
+            n_rows: Maximum number of results (default 25).
+            location: IBKR location code (default "STK.US.MAJOR").
+
+        Returns:
+            List of ScannerResult ranked by IV gain.
+        """
+        return await self.scan(SCAN_TOP_IV_GAINERS, n_rows=n_rows, location=location)
+
+    async def scan_hot_by_volume(
+        self,
+        n_rows: int = 25,
+        location: str = "STK.US.MAJOR",
+    ) -> list[ScannerResult]:
+        """Scan for the hottest options by volume relative to average.
+
+        Wraps scan() with scan_code=SCAN_HOT_BY_VOLUME.
+
+        Args:
+            n_rows: Maximum number of results (default 25).
+            location: IBKR location code (default "STK.US.MAJOR").
+
+        Returns:
+            List of ScannerResult ranked by relative volume heat.
+        """
+        return await self.scan(SCAN_HOT_BY_VOLUME, n_rows=n_rows, location=location)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
