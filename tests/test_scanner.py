@@ -82,6 +82,18 @@ def test_scan_code_constants_are_strings() -> None:
     assert SCAN_HOT_BY_VOLUME == "HOT_BY_OPT_VOLUME"
 
 
+def test_scanner_result_naive_datetime_raises() -> None:
+    from datetime import datetime
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        ScannerResult(
+            rank=1,
+            symbol="SPY",
+            scan_code=SCAN_UNUSUAL_VOLUME,
+            scanned_at=datetime(2026, 3, 15, 12, 0, 0),  # naive — no timezone
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tests: _parse_scan_data
 # ---------------------------------------------------------------------------

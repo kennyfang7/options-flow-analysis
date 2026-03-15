@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from loguru import logger
-
 from pydantic import BaseModel, field_validator
+
+from config.settings import settings as _settings
 
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
@@ -94,6 +95,7 @@ class MarketScanner:
         """
         self._client = client
         self._ib = client.ib
+        self._settings = _settings
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,54 +106,67 @@ class MarketScanner:
         scan_code: str,
         *,
         instrument: str = "OPT",
-        location: str = "STK.US.MAJOR",
-        n_rows: int = 25,
+        location: str | None = None,
+        n_rows: int | None = None,
     ) -> list[ScannerResult]:
         """Run an IBKR scanner subscription and return structured results.
 
-        Calls reqScannerSubscriptionAsync with the given parameters and
-        parses each ScanData entry into a ScannerResult.
+        Uses scanner_location and scanner_max_rows from settings as defaults
+        when location or n_rows are not explicitly provided.
 
         Args:
             scan_code: IBKR scan code (e.g. SCAN_UNUSUAL_VOLUME).
             instrument: Instrument type (default "OPT" for options).
-            location: IBKR location code (default "STK.US.MAJOR").
-            n_rows: Maximum number of results to return (default 25).
+            location: IBKR location code. Defaults to settings.scanner_location.
+            n_rows: Maximum number of results. Defaults to settings.scanner_max_rows.
 
         Returns:
-            List of ScannerResult sorted by rank ascending (as returned by IBKR).
+            List of ScannerResult sorted by rank ascending.
+
+        Raises:
+            RuntimeError: If the IBKR scanner subscription fails.
         """
         from ib_insync import ScannerSubscription
 
+        effective_location = location if location is not None else self._settings.scanner_location
+        effective_n_rows = n_rows if n_rows is not None else self._settings.scanner_max_rows
+
         sub = ScannerSubscription(
             instrument=instrument,
-            locationCode=location,
+            locationCode=effective_location,
             scanCode=scan_code,
-            numberOfRows=n_rows,
+            numberOfRows=effective_n_rows,
         )
         logger.info(
             "scan: running {} (instrument={}, location={}, n_rows={})",
-            scan_code, instrument, location, n_rows,
+            scan_code, instrument, effective_location, effective_n_rows,
         )
 
-        raw_results = await self._ib.reqScannerSubscriptionAsync(sub)
+        try:
+            raw_results = await self._ib.reqScannerSubscriptionAsync(sub)
+        except Exception as exc:
+            logger.exception("scan: reqScannerSubscriptionAsync failed for {}: {}", scan_code, exc)
+            raise RuntimeError(f"Scanner subscription failed for {scan_code}") from exc
+
         results = [self._parse_scan_data(r, scan_code=scan_code) for r in raw_results]
+        results.sort(key=lambda r: r.rank)
 
         logger.info("scan: {} returned {} results", scan_code, len(results))
         return results
 
     async def scan_unusual_volume(
         self,
-        n_rows: int = 25,
-        location: str = "STK.US.MAJOR",
+        n_rows: int | None = None,
+        location: str | None = None,
     ) -> list[ScannerResult]:
         """Scan for options with the highest volume today.
 
-        Wraps scan() with scan_code=SCAN_UNUSUAL_VOLUME.
+        Wraps scan() with scan_code=SCAN_UNUSUAL_VOLUME. Uses settings defaults
+        for n_rows and location when not provided.
 
         Args:
-            n_rows: Maximum number of results (default 25).
-            location: IBKR location code (default "STK.US.MAJOR").
+            n_rows: Maximum number of results. Defaults to settings.scanner_max_rows.
+            location: IBKR location code. Defaults to settings.scanner_location.
 
         Returns:
             List of ScannerResult ranked by option volume.
@@ -160,16 +175,17 @@ class MarketScanner:
 
     async def scan_top_iv_gainers(
         self,
-        n_rows: int = 25,
-        location: str = "STK.US.MAJOR",
+        n_rows: int | None = None,
+        location: str | None = None,
     ) -> list[ScannerResult]:
         """Scan for options with the largest implied volatility increase today.
 
-        Wraps scan() with scan_code=SCAN_TOP_IV_GAINERS.
+        Wraps scan() with scan_code=SCAN_TOP_IV_GAINERS. Uses settings defaults
+        for n_rows and location when not provided.
 
         Args:
-            n_rows: Maximum number of results (default 25).
-            location: IBKR location code (default "STK.US.MAJOR").
+            n_rows: Maximum number of results. Defaults to settings.scanner_max_rows.
+            location: IBKR location code. Defaults to settings.scanner_location.
 
         Returns:
             List of ScannerResult ranked by IV gain.
@@ -178,16 +194,17 @@ class MarketScanner:
 
     async def scan_hot_by_volume(
         self,
-        n_rows: int = 25,
-        location: str = "STK.US.MAJOR",
+        n_rows: int | None = None,
+        location: str | None = None,
     ) -> list[ScannerResult]:
         """Scan for the hottest options by volume relative to average.
 
-        Wraps scan() with scan_code=SCAN_HOT_BY_VOLUME.
+        Wraps scan() with scan_code=SCAN_HOT_BY_VOLUME. Uses settings defaults
+        for n_rows and location when not provided.
 
         Args:
-            n_rows: Maximum number of results (default 25).
-            location: IBKR location code (default "STK.US.MAJOR").
+            n_rows: Maximum number of results. Defaults to settings.scanner_max_rows.
+            location: IBKR location code. Defaults to settings.scanner_location.
 
         Returns:
             List of ScannerResult ranked by relative volume heat.
