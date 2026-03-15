@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
@@ -48,14 +47,48 @@ class ScannerResult(BaseModel):
     scan_code: str
     scanned_at: datetime
 
+    @field_validator("scanned_at")
+    @classmethod
+    def scanned_at_must_be_timezone_aware(cls, v: datetime) -> datetime:
+        """Reject naive datetimes to prevent storage layer UTC mixing.
+
+        Args:
+            v: The scanned_at datetime to validate.
+
+        Returns:
+            The validated datetime.
+
+        Raises:
+            ValueError: If the datetime has no timezone info.
+        """
+        if v.tzinfo is None:
+            raise ValueError("scanned_at must be timezone-aware (use datetime.now(timezone.utc))")
+        return v
+
 
 # ---------------------------------------------------------------------------
 # MarketScanner (stub — to be expanded in later tasks)
 # ---------------------------------------------------------------------------
 
 class MarketScanner:
-    """Placeholder — full implementation in later tasks."""
+    """Wraps IBKR market scanner subscriptions and maps results to ScannerResult.
+
+    Uses reqScannerSubscriptionAsync to run IBKR's built-in scanners and
+    returns structured ScannerResult models for downstream processing.
+
+    Example:
+        async with IBKRClient() as client:
+            scanner = MarketScanner(client)
+            results = await scanner.scan_unusual_volume()
+            for r in results:
+                print(r.rank, r.symbol, r.scan_code)
+    """
 
     def __init__(self, client: IBKRClient) -> None:
+        """Initialize with a connected IBKRClient.
+
+        Args:
+            client: An active IBKRClient instance. Must already be connected.
+        """
         self._client = client
         self._ib = client.ib

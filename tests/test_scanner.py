@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.data.scanner import (
     SCAN_HOT_BY_VOLUME,
     SCAN_TOP_IV_GAINERS,
     SCAN_UNUSUAL_VOLUME,
-    MarketScanner,
     ScannerResult,
 )
 
