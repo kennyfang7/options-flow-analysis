@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
 
 def test_load_watchlist_reads_symbols(tmp_path: Path) -> None:
@@ -33,5 +32,12 @@ def test_load_watchlist_missing_file_returns_empty(tmp_path: Path) -> None:
 def test_load_watchlist_uppercases_symbols(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("spy\nqqq\n")
+    from scripts.run_scanner import load_watchlist
+    assert load_watchlist(str(wl)) == ["SPY", "QQQ"]
+
+
+def test_load_watchlist_strips_indented_comments(tmp_path: Path) -> None:
+    wl = tmp_path / "watchlist.txt"
+    wl.write_text("SPY\n  # indented comment\nQQQ\n")
     from scripts.run_scanner import load_watchlist
     assert load_watchlist(str(wl)) == ["SPY", "QQQ"]

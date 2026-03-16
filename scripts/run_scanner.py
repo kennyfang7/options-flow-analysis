@@ -21,9 +21,9 @@ def load_watchlist(path: str) -> list[str]:
         logger.warning("Watchlist not found at {}, using empty list", path)
         return []
     symbols = [
-        line.strip().upper()
+        s.upper()
         for line in p.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
+        if (s := line.strip()) and not s.startswith("#")
     ]
     logger.info("Loaded {} symbols from {}", len(symbols), path)
     return symbols
