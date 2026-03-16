@@ -71,3 +71,15 @@ def test_backfill_resolve_symbols_falls_back_to_watchlist(
     from scripts.backfill import parse_args, _resolve_symbols
     args = parse_args([])
     assert _resolve_symbols(args) == ["SPY", "QQQ"]
+
+
+def test_scanner_parse_args_no_symbols() -> None:
+    from scripts.run_scanner import parse_args
+    args = parse_args([])
+    assert args.symbols == []
+
+
+def test_scanner_parse_args_with_symbols() -> None:
+    from scripts.run_scanner import parse_args
+    args = parse_args(["SPY", "AAPL"])
+    assert args.symbols == ["SPY", "AAPL"]
