@@ -235,4 +235,4 @@ if __name__ == "__main__":
 
     app = create_app(state, symbols=symbols or ["SPY"])
     logger.info("Starting dashboard on port {}", args.port)
-    app.run_server(debug=args.debug, port=args.port)
+    app.run(debug=args.debug, port=args.port)
