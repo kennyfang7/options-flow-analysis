@@ -164,13 +164,13 @@ async def run_pipeline(symbols: list[str]) -> None:
                 "Pipeline running ({} contracts). Press Ctrl+C to stop.",
                 stream.subscribed_count,
             )
-            last_purge = asyncio.get_event_loop().time()
+            last_purge = asyncio.get_running_loop().time()
 
             while True:
                 try:
                     tick = await asyncio.wait_for(stream.queue.get(), timeout=1.0)
                 except asyncio.TimeoutError:
-                    now = asyncio.get_event_loop().time()
+                    now = asyncio.get_running_loop().time()
                     if now - last_purge >= purge_interval:
                         classifier.purge_stale()
                         unusual.purge_stale()
