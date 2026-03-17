@@ -162,6 +162,7 @@ async def test_pending_tickers_puts_tick_in_queue(mock_ibkr_client):
     ticker.callOpenInterest = 1000
     ticker.putOpenInterest = 0
     ticker.modelGreeks = MagicMock()
+    ticker.modelGreeks.undPrice = 500.0
     ticker.modelGreeks.impliedVol = 0.25
     ticker.modelGreeks.delta = 0.45
     ticker.modelGreeks.gamma = 0.02

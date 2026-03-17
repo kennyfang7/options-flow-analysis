@@ -141,9 +141,7 @@ async def get_recent_ticks(
     Returns:
         List of OptionTick rows ordered by received_at ascending.
     """
-    # SQLite stores DateTime as naive UTC strings; strip tzinfo for compatibility.
-    # When migrating to PostgreSQL (which preserves tzinfo), revisit this.
-    since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).replace(tzinfo=None)
+    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
     result = await session.execute(
         select(OptionTick)
         .where(OptionTick.con_id == con_id, OptionTick.received_at >= since)
@@ -185,7 +183,7 @@ async def insert_classified_trade(
         signal_strength=trade.signal_strength,
         volume_delta=trade.volume_delta,
         window_ticks=trade.window_ticks,
-        classified_at=trade.timestamp.replace(tzinfo=None),  # naive UTC for SQLite
+        classified_at=trade.timestamp,
     )
     session.add(record)
     await session.flush()
@@ -225,8 +223,8 @@ async def insert_unusual_signal(
         signal_strength=signal.signal_strength,
         top_reason=signal.top_reason.value,
         reasons=json.dumps([r.value for r in signal.reasons]),
-        classified_at=signal.trade.timestamp.replace(tzinfo=None),
-        flagged_at=signal.flagged_at.replace(tzinfo=None),
+        classified_at=signal.trade.timestamp,
+        flagged_at=signal.flagged_at,
     )
     session.add(record)
     await session.flush()

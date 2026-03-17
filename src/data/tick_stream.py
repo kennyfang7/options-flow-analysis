@@ -361,7 +361,7 @@ class TickStream:
             last_size=_clean_int(getattr(ticker, "lastSize", None)),
             bid_size=_clean_int(getattr(ticker, "bidSize", None)),
             ask_size=_clean_int(getattr(ticker, "askSize", None)),
-            underlying_price=underlying_price,
+            underlying_price=(_clean(greeks.undPrice) if greeks else None) or underlying_price,
             implied_vol=_clean(greeks.impliedVol) if greeks else None,
             delta=_clean(greeks.delta) if greeks else None,
             gamma=_clean(greeks.gamma) if greeks else None,

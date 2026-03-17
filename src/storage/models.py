@@ -25,7 +25,7 @@ class ChainSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     underlying: Mapped[str] = mapped_column(String, nullable=False)
     underlying_price: Mapped[float] = mapped_column(Float, nullable=False)
-    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # maps from OptionChainSnapshot.timestamp
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)  # maps from OptionChainSnapshot.timestamp
 
     contracts: Mapped[list[OptionContractRecord]] = relationship(
         "OptionContractRecord", back_populates="snapshot", cascade="all, delete-orphan"
@@ -94,7 +94,7 @@ class OptionTick(Base):
     expiry: Mapped[str] = mapped_column(String, nullable=False)
     strike: Mapped[float] = mapped_column(Float, nullable=False)
     right: Mapped[str] = mapped_column(String(1), nullable=False)
-    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # maps from TickUpdate.timestamp
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)  # maps from TickUpdate.timestamp
 
     bid: Mapped[float | None] = mapped_column(Float, nullable=True)
     ask: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -153,7 +153,7 @@ class ClassifiedTradeRecord(Base):
     signal_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     window_ticks: Mapped[int] = mapped_column(Integer, nullable=False)
-    classified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    classified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class UnusualSignalRecord(Base):
@@ -196,5 +196,5 @@ class UnusualSignalRecord(Base):
 
     top_reason: Mapped[str] = mapped_column(String, nullable=False)     # UnusualReason.value
     reasons: Mapped[str] = mapped_column(String, nullable=False)        # JSON array
-    classified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    flagged_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    classified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    flagged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

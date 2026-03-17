@@ -2,6 +2,7 @@
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
 markers = [
     "integration: marks tests that require a live TWS/Gateway connection (deselect with -m 'not integration')",
 ]
