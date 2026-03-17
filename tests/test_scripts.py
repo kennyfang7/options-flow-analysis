@@ -83,3 +83,41 @@ def test_scanner_parse_args_with_symbols() -> None:
     from scripts.run_scanner import parse_args
     args = parse_args(["SPY", "AAPL"])
     assert args.symbols == ["SPY", "AAPL"]
+
+
+def test_dashboard_parse_args_defaults() -> None:
+    from scripts.run_dashboard import parse_args
+    args = parse_args([])
+    assert args.symbols == []
+    assert args.port == 8050
+    assert args.debug is False
+
+
+def test_dashboard_parse_args_custom_port() -> None:
+    from scripts.run_dashboard import parse_args
+    args = parse_args(["--port", "9000"])
+    assert args.port == 9000
+
+
+def test_dashboard_parse_args_with_symbols_and_debug() -> None:
+    from scripts.run_dashboard import parse_args
+    args = parse_args(["SPY", "QQQ", "--debug"])
+    assert args.symbols == ["SPY", "QQQ"]
+    assert args.debug is True
+
+
+def test_start_pipeline_thread_returns_daemon_thread() -> None:
+    from unittest.mock import patch
+    from src.dashboard.shared_state import SharedState
+    from scripts.run_dashboard import start_pipeline_thread
+
+    state = SharedState()
+
+    async def _quick(s, syms):
+        return  # exits immediately so the thread ends cleanly
+
+    with patch("scripts.run_dashboard._pipeline", _quick):
+        thread = start_pipeline_thread(state, ["SPY"])
+
+    assert thread.daemon is True
+    thread.join(timeout=2.0)  # wait for the thread to finish cleanly
