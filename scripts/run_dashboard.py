@@ -4,8 +4,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import threading
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from src.dashboard.shared_state import SharedState
 
 from config.settings import settings
 
@@ -43,7 +47,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def start_pipeline_thread(
-    state: "SharedState",  # type: ignore[name-defined]
+    state: "SharedState",
     symbols: list[str],
 ) -> threading.Thread:
     """Start the asyncio analysis pipeline in a background daemon thread.
@@ -67,7 +71,7 @@ def start_pipeline_thread(
 
 
 async def _pipeline(
-    state: "SharedState",  # type: ignore[name-defined]
+    state: "SharedState",
     symbols: list[str],
 ) -> None:
     """Async pipeline that feeds SharedState from the IBKR tick stream.
@@ -156,6 +160,13 @@ async def _pipeline(
                         MAX_MKT_DATA_LINES,
                     )
                     break
+
+            if stream.subscribed_count == 0:
+                logger.error(
+                    "No contracts subscribed in dashboard pipeline — "
+                    "check watchlist and IBKR connection."
+                )
+                return
 
             logger.success("Dashboard pipeline running ({} contracts).", stream.subscribed_count)
             last_purge = asyncio.get_running_loop().time()

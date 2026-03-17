@@ -113,7 +113,7 @@ def test_start_pipeline_thread_returns_daemon_thread() -> None:
 
     state = SharedState()
 
-    async def _quick(s, syms):
+    async def _quick(state, symbols):
         return  # exits immediately so the thread ends cleanly
 
     with patch("scripts.run_dashboard._pipeline", _quick):
