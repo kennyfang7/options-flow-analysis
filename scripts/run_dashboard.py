@@ -99,6 +99,7 @@ async def _pipeline(
         insert_chain_snapshot,
         insert_classified_trade,
         insert_unusual_signal,
+        load_chain_snapshot,
     )
 
     await init_db()
@@ -129,7 +130,20 @@ async def _pipeline(
         async with TickStream(client) as stream:
             for symbol in symbols:
                 try:
-                    snapshot = await fetcher.fetch_chain(symbol)
+                    # Try DB cache first — avoid redundant IBKR chain fetches on restart
+                    async with get_session() as session:
+                        snapshot = await load_chain_snapshot(session, symbol)
+
+                    if snapshot is not None:
+                        logger.info(
+                            "Using cached chain snapshot for {} ({} contracts)",
+                            symbol, len(snapshot.contracts),
+                        )
+                    else:
+                        snapshot = await fetcher.fetch_chain(symbol)
+                        async with get_session() as session:
+                            await insert_chain_snapshot(session, snapshot)
+
                     qualified = [c for c in snapshot.contracts if c.con_id]
 
                     remaining = MAX_MKT_DATA_LINES - stream.subscribed_count
@@ -148,9 +162,6 @@ async def _pipeline(
                     for c in snapshot.contracts:
                         if c.con_id is not None and c.open_interest is not None:
                             unusual._oi_cache[c.con_id] = c.open_interest
-
-                    async with get_session() as session:
-                        await insert_chain_snapshot(session, snapshot)
                 except Exception:
                     logger.exception("Failed to fetch chain for {} in dashboard pipeline", symbol)
 

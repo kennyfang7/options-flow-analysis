@@ -353,11 +353,8 @@ class TickStream:
             bid=_clean(getattr(ticker, "bid", None)),
             ask=_clean(getattr(ticker, "ask", None)),
             last=_clean(getattr(ticker, "last", None)),
-            volume=_clean_int(getattr(ticker, "volume", None)),
-            open_interest=_clean_int(
-                getattr(ticker, "callOpenInterest", None) if right == "C"
-                else getattr(ticker, "putOpenInterest", None)
-            ),
+            volume=_clean_int(getattr(ticker, "optVolume", None)),
+            open_interest=_clean_int(getattr(ticker, "optOpenInterest", None)),
             last_size=_clean_int(getattr(ticker, "lastSize", None)),
             bid_size=_clean_int(getattr(ticker, "bidSize", None)),
             ask_size=_clean_int(getattr(ticker, "askSize", None)),

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.analysis.flow_classifier import ClassifiedTrade
 from src.analysis.unusual_detector import UnusualSignal
@@ -124,6 +126,103 @@ async def get_latest_snapshot(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def load_chain_snapshot(
+    session: AsyncSession,
+    underlying: str,
+    *,
+    max_age_hours: float = 8.0,
+) -> OptionChainSnapshot | None:
+    """Load the latest chain snapshot from DB if it was captured today (ET).
+
+    Eagerly loads the contracts relationship and reconstructs the full
+    OptionChainSnapshot pydantic model. Returns None if no snapshot exists
+    or the most recent one is stale (captured on a different ET calendar day
+    or older than max_age_hours).
+
+    Args:
+        session: Active AsyncSession.
+        underlying: Ticker symbol, e.g. "SPY".
+        max_age_hours: Maximum age in hours for the snapshot to be
+            considered fresh. Defaults to 8.0 (one full trading day).
+
+    Returns:
+        Reconstructed OptionChainSnapshot, or None if cache miss.
+    """
+    from src.data.chain_fetcher import OptionContract
+
+    et = ZoneInfo("America/New_York")
+    now_et = datetime.now(timezone.utc).astimezone(et)
+
+    result = await session.execute(
+        select(ChainSnapshot)
+        .options(selectinload(ChainSnapshot.contracts))
+        .where(ChainSnapshot.underlying == underlying)
+        .order_by(ChainSnapshot.captured_at.desc())
+        .limit(1)
+    )
+    row: ChainSnapshot | None = result.scalar_one_or_none()
+    if row is None:
+        logger.debug("load_chain_snapshot: no snapshot found for {}", underlying)
+        return None
+
+    # SQLite quirk: DateTime(timezone=True) may return naive datetimes via aiosqlite.
+    # Treat naive as UTC before converting to ET.
+    captured_at = row.captured_at
+    if captured_at.tzinfo is None:
+        captured_at = captured_at.replace(tzinfo=timezone.utc)
+    captured_et = captured_at.astimezone(et)
+
+    # Staleness check 1: must be same ET calendar day
+    if captured_et.date() != now_et.date():
+        logger.info(
+            "load_chain_snapshot: stale snapshot for {} (captured {} ET, today {})",
+            underlying, captured_et.date(), now_et.date(),
+        )
+        return None
+
+    # Staleness check 2: must be within max_age_hours
+    age = now_et - captured_et
+    if age > timedelta(hours=max_age_hours):
+        logger.info(
+            "load_chain_snapshot: snapshot for {} too old ({:.1f}h > {:.1f}h)",
+            underlying, age.total_seconds() / 3600, max_age_hours,
+        )
+        return None
+
+    contracts = [
+        OptionContract(
+            symbol=c.symbol,
+            expiry=c.expiry,
+            strike=c.strike,
+            right=c.right,
+            con_id=c.con_id,
+            bid=c.bid,
+            ask=c.ask,
+            last=c.last,
+            volume=c.volume,
+            open_interest=c.open_interest,
+            implied_vol=c.implied_vol,
+            delta=c.delta,
+            gamma=c.gamma,
+            theta=c.theta,
+            vega=c.vega,
+        )
+        for c in row.contracts
+    ]
+
+    snapshot = OptionChainSnapshot(
+        underlying=row.underlying,
+        underlying_price=row.underlying_price,
+        timestamp=row.captured_at,
+        contracts=contracts,
+    )
+    logger.success(
+        "load_chain_snapshot: loaded cached snapshot for {} ({} contracts, captured {})",
+        underlying, len(contracts), captured_et.strftime("%Y-%m-%d %H:%M ET"),
+    )
+    return snapshot
 
 
 async def get_recent_ticks(

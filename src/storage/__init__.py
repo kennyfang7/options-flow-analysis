@@ -16,6 +16,7 @@ from src.storage.queries import (
     insert_classified_trade,
     insert_tick,
     insert_unusual_signal,
+    load_chain_snapshot,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "insert_unusual_signal",
     "get_latest_snapshot",
     "get_recent_ticks",
+    "load_chain_snapshot",
 ]

@@ -372,12 +372,14 @@ def test_storage_package_exports():
         insert_tick,
         get_latest_snapshot,
         get_recent_ticks,
+        load_chain_snapshot,
     )
     assert all([
         Base, ChainSnapshot, OptionContractRecord, OptionTick,
         get_session, init_db,
         insert_chain_snapshot, insert_tick,
         get_latest_snapshot, get_recent_ticks,
+        load_chain_snapshot,
     ])
 
 
@@ -614,3 +616,183 @@ async def test_insert_unusual_signal_persists_fields(async_db_session):
     assert record.volume_delta == 60
     assert record.classified_at == datetime(2026, 3, 8, 14, 30, 0)
     assert record.flagged_at == datetime(2026, 3, 8, 14, 30, 1)
+
+
+# ---------------------------------------------------------------------------
+# load_chain_snapshot tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_cache_hit_same_day(async_db_session):
+    """Returns reconstructed OptionChainSnapshot when a same-day snapshot exists."""
+    from datetime import datetime, timezone
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    contract = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="C",
+        con_id=12345, bid=1.0, ask=1.05, delta=0.5, implied_vol=0.25,
+        volume=100, open_interest=5000,
+    )
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[contract],
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is not None
+    assert result.underlying == "SPY"
+    assert result.underlying_price == 500.0
+    assert len(result.contracts) == 1
+    assert result.contracts[0].con_id == 12345
+    assert result.contracts[0].bid == 1.0
+    assert result.contracts[0].delta == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_cache_miss_stale(async_db_session):
+    """Returns None when snapshot is from a previous day."""
+    from datetime import datetime, timezone, timedelta
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    contract = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="C", con_id=12345,
+    )
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=490.0,
+        timestamp=datetime.now(timezone.utc) - timedelta(days=1),
+        contracts=[contract],
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_cache_miss_empty_db(async_db_session):
+    """Returns None when no snapshots exist at all."""
+    from src.storage.queries import load_chain_snapshot
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_reconstructs_all_fields(async_db_session):
+    """All OptionContract fields survive the round-trip through the DB."""
+    from datetime import datetime, timezone
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    contract = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="C",
+        con_id=12345, bid=1.0, ask=1.05, last=1.02,
+        volume=100, open_interest=5000,
+        implied_vol=0.25, delta=0.50, gamma=0.03, theta=-0.05, vega=0.12,
+    )
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[contract],
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is not None
+    c = result.contracts[0]
+    assert c.symbol == "SPY"
+    assert c.expiry == "20260320"
+    assert c.strike == 500.0
+    assert c.right == "C"
+    assert c.con_id == 12345
+    assert c.bid == pytest.approx(1.0)
+    assert c.ask == pytest.approx(1.05)
+    assert c.last == pytest.approx(1.02)
+    assert c.volume == 100
+    assert c.open_interest == 5000
+    assert c.implied_vol == pytest.approx(0.25)
+    assert c.delta == pytest.approx(0.50)
+    assert c.gamma == pytest.approx(0.03)
+    assert c.theta == pytest.approx(-0.05)
+    assert c.vega == pytest.approx(0.12)
+    assert c.mid == pytest.approx(1.025)
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_max_age_hours(async_db_session):
+    """Returns None when snapshot exceeds max_age_hours even if same day."""
+    from datetime import datetime, timezone, timedelta
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    contract = OptionContract(
+        symbol="SPY", expiry="20260320", strike=500.0, right="C", con_id=12345,
+    )
+    # 9 hours ago — exceeds default max_age_hours=8
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=490.0,
+        timestamp=datetime.now(timezone.utc) - timedelta(hours=9),
+        contracts=[contract],
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_skips_none_con_id_contracts(async_db_session):
+    """Contracts with con_id=None are skipped during insert, so not in cache."""
+    from datetime import datetime, timezone
+    from src.data.chain_fetcher import OptionChainSnapshot, OptionContract
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    contracts = [
+        OptionContract(
+            symbol="SPY", expiry="20260320", strike=500.0, right="C",
+            con_id=None,  # skipped during insert
+        ),
+        OptionContract(
+            symbol="SPY", expiry="20260320", strike=500.0, right="P",
+            con_id=99999,
+        ),
+    ]
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=contracts,
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "SPY")
+    assert result is not None
+    assert len(result.contracts) == 1
+    assert result.contracts[0].con_id == 99999
+
+
+@pytest.mark.asyncio
+async def test_load_chain_snapshot_different_symbols_isolated(async_db_session):
+    """Cache lookup is per-symbol — SPY snapshot does not satisfy AAPL lookup."""
+    from datetime import datetime, timezone
+    from src.data.chain_fetcher import OptionChainSnapshot
+    from src.storage.queries import insert_chain_snapshot, load_chain_snapshot
+
+    snapshot = OptionChainSnapshot(
+        underlying="SPY",
+        underlying_price=500.0,
+        timestamp=datetime.now(timezone.utc),
+        contracts=[],
+    )
+    await insert_chain_snapshot(async_db_session, snapshot)
+
+    result = await load_chain_snapshot(async_db_session, "AAPL")
+    assert result is None
