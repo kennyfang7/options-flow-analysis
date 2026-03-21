@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from ib_insync import IB
 from loguru import logger
 
 if TYPE_CHECKING:
     from config.settings import Settings
+
+# Type alias for async reconnect callbacks registered by the pipeline.
+ReconnectCallback = Callable[[], Coroutine[Any, Any, None]]
 
 
 class IBKRConnectionError(ConnectionError):
@@ -41,6 +45,7 @@ class IBKRClient:
         self._ib = IB()
         self._intentional_disconnect = False
         self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_callbacks: list[ReconnectCallback] = []
 
         self._ib.disconnectedEvent += self._on_disconnect
 
@@ -116,6 +121,19 @@ class IBKRClient:
         self._ib.disconnect()
         logger.info("Disconnected from TWS/Gateway.")
 
+    def register_reconnect_callback(self, callback: ReconnectCallback) -> None:
+        """Register an async callback to be called after a successful reconnect.
+
+        Use this to re-subscribe tick streams or re-seed caches after an
+        unexpected disconnect and automatic reconnection.
+
+        Args:
+            callback: A no-argument async callable. Multiple callbacks are
+                called in registration order. Exceptions are logged but do not
+                prevent remaining callbacks from running.
+        """
+        self._reconnect_callbacks.append(callback)
+
     async def verify_connection(self) -> list[str]:
         """Verify the connection is alive and authenticated.
 
@@ -180,7 +198,7 @@ class IBKRClient:
             return
 
         logger.warning("Unexpected disconnect detected — scheduling reconnect.")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._reconnect_task = loop.create_task(self._reconnect_with_backoff())
 
     async def _reconnect_with_backoff(self) -> None:
@@ -202,6 +220,11 @@ class IBKRClient:
             try:
                 await self.connect()
                 logger.success("Reconnected successfully on attempt {}.", attempt)
+                for cb in self._reconnect_callbacks:
+                    try:
+                        await cb()
+                    except Exception:
+                        logger.exception("Reconnect callback {} raised an exception.", cb)
                 return
             except IBKRConnectionError as exc:
                 logger.warning("Reconnect attempt {} failed: {}", attempt, exc)

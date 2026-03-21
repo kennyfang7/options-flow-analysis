@@ -36,6 +36,41 @@ IBKR TWS/Gateway (local)
 
 ---
 
+## Enhancement Priority Guide
+
+Prioritized by impact: reliability first, then actionability, then scale.
+
+### Tier 1 — System Stability (Do These First)
+1. **Reconnection logic** — A TWS hiccup kills the entire session without this. Everything else is worthless if the connection drops silently.
+2. **Rate limit manager** — IBKR disconnects/throttles above 50 msg/sec. Nothing currently tracks this centrally — a ticking time bomb as symbols increase.
+3. **Data validation layer** — IBKR sends malformed/null data regularly. Without a validation gate, bad ticks silently corrupt analysis.
+4. **Watchlist manager** — CLI/hardcoded symbols are not practical day-to-day. A YAML file with per-ticker thresholds makes the system usable.
+
+### Tier 2 — High Signal Value (Makes Alerts Actionable)
+5. **Earnings event overlay** — A $2M sweep means something very different 2 days before earnings vs. a random Tuesday. Immediately makes every existing signal more useful.
+6. **Multi-leg detection** — The classifier currently returns None for spreads/straddles — a large class of institutional trades is invisible. Plugs a real gap.
+7. **GEX/DEX calculation** — The sentiment module already partially computes this. Completing it gives mechanical price levels where market makers must hedge.
+8. **IV surface modeling** — Moves from "this option's IV is high" to "the entire volatility surface is shifting" — a much stronger signal for informed activity.
+
+### Tier 3 — Validation & Research
+9. **Replay mode** — Prerequisite for backtesting. Save sessions to disk and replay offline without needing live TWS.
+10. **Backtester** — Critical before trusting signals for real decisions. Answers: "do these alerts have any predictive value?"
+11. **Sector rotation tracker** — Adds a macro layer; see where institutional money is moving between sectors, not just individual names.
+12. **Dark pool correlation** — Options flow + dark pool volume pointing the same way is stronger than either alone. Requires an external data source.
+
+### Tier 4 — Intelligence (Requires Historical Data First)
+13. **ML anomaly scoring** — More precise than static thresholds, but needs months of labeled historical data to train on. Collect data via Tiers 1–2 first.
+14. **Whale tracker** — Requires significant history to cluster behavioral patterns reliably. Long-term project.
+15. **Natural language summaries** — LLM-generated daily recaps. Low effort to add, but low priority relative to the above.
+
+### Tier 5 — Production Scale (When You Outgrow SQLite)
+16. **PostgreSQL + TimescaleDB** — SQLite is fine until you're storing millions of ticks. Switch when performance degrades.
+17. **Redis caching** — Reduces redundant IBKR requests. Worth adding once watching 20+ symbols regularly.
+18. **Monitoring** — Essential before running unattended. Prometheus metrics surface stale data or silent connection degradation.
+19. **Containerization** — Last priority; only matters when deploying to a server rather than running locally.
+
+---
+
 ## Enhancement Roadmap
 
 ### Phase 1 — Foundation Enhancements

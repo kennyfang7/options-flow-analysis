@@ -136,6 +136,129 @@ async def test_reconnect_called_on_unexpected_disconnect(
 
 
 # ---------------------------------------------------------------------------
+# Reconnection / backoff tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_reconnect_retries_up_to_max(mock_ib: MagicMock, mock_settings: Settings) -> None:
+    """_reconnect_with_backoff() attempts exactly max_retries times then gives up."""
+    mock_settings.ibkr_max_retries = 3
+    mock_ib.connectAsync.side_effect = TimeoutError("timed out")
+    client = make_client(mock_ib, mock_settings)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await client._reconnect_with_backoff()
+
+    assert mock_ib.connectAsync.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_reconnect_succeeds_on_second_attempt(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """_reconnect_with_backoff() stops retrying after first success."""
+    mock_settings.ibkr_max_retries = 5
+    mock_ib.connectAsync.side_effect = [TimeoutError("fail"), None]
+    client = make_client(mock_ib, mock_settings)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await client._reconnect_with_backoff()
+
+    assert mock_ib.connectAsync.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reconnect_backoff_delay_doubles(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """_reconnect_with_backoff() doubles the sleep delay each failed attempt."""
+    mock_settings.ibkr_max_retries = 3
+    mock_ib.connectAsync.side_effect = TimeoutError("fail")
+    client = make_client(mock_ib, mock_settings)
+
+    sleep_calls: list[float] = []
+
+    async def capture_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    with patch("asyncio.sleep", side_effect=capture_sleep):
+        await client._reconnect_with_backoff()
+
+    assert sleep_calls == [1.0, 2.0, 4.0]
+
+
+@pytest.mark.asyncio
+async def test_reconnect_exhausted_returns_cleanly(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """_reconnect_with_backoff() returns normally (no raise) after all retries fail."""
+    mock_settings.ibkr_max_retries = 2
+    mock_ib.connectAsync.side_effect = TimeoutError("fail")
+    client = make_client(mock_ib, mock_settings)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        # Should not raise — caller (task) handles the exhausted case via logging
+        await client._reconnect_with_backoff()
+
+    assert mock_ib.connectAsync.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reconnect_callback_called_on_success(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """register_reconnect_callback() callbacks are awaited after successful reconnect."""
+    mock_settings.ibkr_max_retries = 3
+    client = make_client(mock_ib, mock_settings)
+
+    cb = AsyncMock()
+    client.register_reconnect_callback(cb)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await client._reconnect_with_backoff()
+
+    cb.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_callback_not_called_on_exhaustion(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """Callbacks are NOT called when all reconnect attempts are exhausted."""
+    mock_settings.ibkr_max_retries = 2
+    mock_ib.connectAsync.side_effect = TimeoutError("fail")
+    client = make_client(mock_ib, mock_settings)
+
+    cb = AsyncMock()
+    client.register_reconnect_callback(cb)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await client._reconnect_with_backoff()
+
+    cb.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_callback_exception_does_not_abort(
+    mock_ib: MagicMock, mock_settings: Settings
+) -> None:
+    """A failing callback logs the exception but does not prevent remaining callbacks."""
+    mock_settings.ibkr_max_retries = 3
+    client = make_client(mock_ib, mock_settings)
+
+    bad_cb = AsyncMock(side_effect=RuntimeError("boom"))
+    good_cb = AsyncMock()
+    client.register_reconnect_callback(bad_cb)
+    client.register_reconnect_callback(good_cb)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await client._reconnect_with_backoff()
+
+    bad_cb.assert_awaited_once()
+    good_cb.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # Integration test (requires live TWS/Gateway)
 # ---------------------------------------------------------------------------
 
