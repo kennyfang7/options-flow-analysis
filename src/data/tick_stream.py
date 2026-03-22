@@ -6,9 +6,18 @@ from typing import TYPE_CHECKING
 
 from ib_insync import Option, Ticker
 from loguru import logger
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, ValidationError, computed_field, field_validator
 
 from src.data.chain_fetcher import _clean, _clean_int, OptionContract  # shared IBKR sentinel helpers
+from src.utils.validators import (
+    clamp_delta,
+    clamp_implied_vol,
+    has_any_price,
+    is_bid_ask_consistent,
+    sanitize_right,
+    is_expiry_valid,
+    is_strike_valid,
+)
 
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
@@ -79,6 +88,56 @@ class TickUpdate(BaseModel):
     gamma: float | None = None
     theta: float | None = None
     vega: float | None = None
+
+    @field_validator("con_id")
+    @classmethod
+    def con_id_must_be_positive(cls, v: int) -> int:
+        """Reject IBKR sentinel con_id=0 (unqualified contract)."""
+        if v <= 0:
+            raise ValueError(f"con_id must be > 0, got {v}")
+        return v
+
+    @field_validator("strike")
+    @classmethod
+    def strike_must_be_positive(cls, v: float) -> float:
+        """Reject strike prices that are zero or negative."""
+        if not is_strike_valid(v):
+            raise ValueError(f"strike must be > 0, got {v}")
+        return v
+
+    @field_validator("right", mode="before")
+    @classmethod
+    def right_must_be_call_or_put(cls, v: str) -> str:
+        """Normalise right to uppercase 'C' or 'P'; reject anything else."""
+        return sanitize_right(v)
+
+    @field_validator("expiry")
+    @classmethod
+    def expiry_must_be_valid_date(cls, v: str) -> str:
+        """Reject malformed or non-calendar YYYYMMDD expiry strings."""
+        if not is_expiry_valid(v):
+            raise ValueError(f"expiry must be a valid YYYYMMDD date, got {v!r}")
+        return v
+
+    @field_validator("volume", "last_size", "bid_size", "ask_size", mode="before")
+    @classmethod
+    def coerce_negative_int_to_none(cls, v: int | None) -> int | None:
+        """Coerce negative integer fields to None."""
+        if v is not None and v < 0:
+            return None
+        return v
+
+    @field_validator("implied_vol", mode="before")
+    @classmethod
+    def clamp_iv(cls, v: float | None) -> float | None:
+        """Silently coerce out-of-range IV to None."""
+        return clamp_implied_vol(v)
+
+    @field_validator("delta", mode="before")
+    @classmethod
+    def clamp_delta_field(cls, v: float | None) -> float | None:
+        """Silently coerce out-of-range delta to None."""
+        return clamp_delta(v)
 
     @computed_field
     @property
@@ -329,12 +388,17 @@ class TickStream:
     ) -> TickUpdate | None:
         """Convert a raw ib_insync Ticker to a TickUpdate domain object.
 
+        Applies a validation gate: ticks with no actionable price data are
+        dropped; ValidationErrors are caught and the tick is dropped with a
+        log entry rather than crashing the synchronous event handler.
+
         Args:
             ticker: Raw Ticker from pendingTickersEvent.
             underlying_price: Underlying price stored at subscription time.
 
         Returns:
-            TickUpdate, or None if the contract has no conId.
+            TickUpdate, or None if the contract has no conId, has no price
+            data, or fails model validation.
         """
         c = ticker.contract
         if not c or not c.conId:
@@ -343,28 +407,54 @@ class TickStream:
         greeks = ticker.modelGreeks
         right = getattr(c, "right", "C")
 
-        return TickUpdate(
-            symbol=c.symbol,
-            con_id=c.conId,
-            expiry=c.lastTradeDateOrContractMonth,
-            strike=c.strike,
-            right=right,
-            timestamp=datetime.now(timezone.utc),
-            bid=_clean(getattr(ticker, "bid", None)),
-            ask=_clean(getattr(ticker, "ask", None)),
-            last=_clean(getattr(ticker, "last", None)),
-            volume=_clean_int(getattr(ticker, "optVolume", None)),
-            open_interest=_clean_int(getattr(ticker, "optOpenInterest", None)),
-            last_size=_clean_int(getattr(ticker, "lastSize", None)),
-            bid_size=_clean_int(getattr(ticker, "bidSize", None)),
-            ask_size=_clean_int(getattr(ticker, "askSize", None)),
-            underlying_price=(_clean(greeks.undPrice) if greeks else None) or underlying_price,
-            implied_vol=_clean(greeks.impliedVol) if greeks else None,
-            delta=_clean(greeks.delta) if greeks else None,
-            gamma=_clean(greeks.gamma) if greeks else None,
-            theta=_clean(greeks.theta) if greeks else None,
-            vega=_clean(greeks.vega) if greeks else None,
-        )
+        raw_bid = _clean(getattr(ticker, "bid", None))
+        raw_ask = _clean(getattr(ticker, "ask", None))
+        raw_last = _clean(getattr(ticker, "last", None))
+
+        if not has_any_price(raw_bid, raw_ask, raw_last):
+            logger.debug(
+                "_ticker_to_update: no price data for con_id={} — dropping tick",
+                c.conId,
+            )
+            return None
+
+        if not is_bid_ask_consistent(raw_bid, raw_ask):
+            logger.warning(
+                "_ticker_to_update: inverted spread for con_id={} (bid={} > ask={}) — clearing both",
+                c.conId, raw_bid, raw_ask,
+            )
+            raw_bid = None
+            raw_ask = None
+
+        try:
+            return TickUpdate(
+                symbol=c.symbol,
+                con_id=c.conId,
+                expiry=c.lastTradeDateOrContractMonth,
+                strike=c.strike,
+                right=right,
+                timestamp=datetime.now(timezone.utc),
+                bid=raw_bid,
+                ask=raw_ask,
+                last=raw_last,
+                volume=_clean_int(getattr(ticker, "optVolume", None)),
+                open_interest=_clean_int(getattr(ticker, "optOpenInterest", None)),
+                last_size=_clean_int(getattr(ticker, "lastSize", None)),
+                bid_size=_clean_int(getattr(ticker, "bidSize", None)),
+                ask_size=_clean_int(getattr(ticker, "askSize", None)),
+                underlying_price=(_clean(greeks.undPrice) if greeks else None) or underlying_price,
+                implied_vol=_clean(greeks.impliedVol) if greeks else None,
+                delta=_clean(greeks.delta) if greeks else None,
+                gamma=_clean(greeks.gamma) if greeks else None,
+                theta=_clean(greeks.theta) if greeks else None,
+                vega=_clean(greeks.vega) if greeks else None,
+            )
+        except ValidationError as exc:
+            logger.error(
+                "_ticker_to_update: validation failed for con_id={} — dropping tick. errors={}",
+                c.conId, exc.errors(),
+            )
+            return None
 
 
 # ---------------------------------------------------------------------------

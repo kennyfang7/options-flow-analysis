@@ -147,6 +147,20 @@ class Settings(BaseSettings):
         description="Maximum alerts to accumulate in SharedState queue and alerts panel",
     )
 
+    # Rate Limiter
+    ibkr_max_messages_per_sec: int = Field(
+        default=48,
+        ge=1,
+        le=50,
+        description="Max IBKR messages per second (IBKR hard limit is 50)",
+    )
+    ibkr_max_historical_per_10min: int = Field(
+        default=55,
+        ge=1,
+        le=60,
+        description="Max historical data requests per 10-minute window (IBKR hard limit is 60)",
+    )
+
     # Scanner
     scanner_max_rows: int = Field(
         default=25,

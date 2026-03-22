@@ -8,7 +8,17 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from ib_insync import Option, Stock, Ticker
 from loguru import logger
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, ValidationError, computed_field, field_validator, model_validator
+
+from src.utils.validators import (
+    clamp_delta,
+    clamp_implied_vol,
+    has_any_price,
+    is_bid_ask_consistent,
+    sanitize_right,
+    is_expiry_valid,
+    is_strike_valid,
+)
 
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
@@ -54,6 +64,56 @@ class OptionContract(BaseModel):
     gamma: float | None = None
     theta: float | None = None
     vega: float | None = None
+
+    @field_validator("strike")
+    @classmethod
+    def strike_must_be_positive(cls, v: float) -> float:
+        """Reject strike prices that are zero or negative."""
+        if not is_strike_valid(v):
+            raise ValueError(f"strike must be > 0, got {v}")
+        return v
+
+    @field_validator("right", mode="before")
+    @classmethod
+    def right_must_be_call_or_put(cls, v: str) -> str:
+        """Normalise right to uppercase 'C' or 'P'; reject anything else."""
+        return sanitize_right(v)
+
+    @field_validator("expiry")
+    @classmethod
+    def expiry_must_be_valid_date(cls, v: str) -> str:
+        """Reject malformed or non-calendar YYYYMMDD expiry strings."""
+        if not is_expiry_valid(v):
+            raise ValueError(f"expiry must be a valid YYYYMMDD date, got {v!r}")
+        return v
+
+    @field_validator("con_id", mode="before")
+    @classmethod
+    def coerce_zero_con_id_to_none(cls, v: int | None) -> int | None:
+        """Coerce IBKR sentinel con_id=0 to None (unqualified contract)."""
+        if v == 0:
+            return None
+        return v
+
+    @field_validator("volume", mode="before")
+    @classmethod
+    def coerce_negative_volume_to_none(cls, v: int | None) -> int | None:
+        """Coerce negative volume to None (IBKR can emit -1 after clean)."""
+        if v is not None and v < 0:
+            return None
+        return v
+
+    @field_validator("implied_vol", mode="before")
+    @classmethod
+    def clamp_iv(cls, v: float | None) -> float | None:
+        """Silently coerce out-of-range IV to None; contract is still usable."""
+        return clamp_implied_vol(v)
+
+    @field_validator("delta", mode="before")
+    @classmethod
+    def clamp_delta_field(cls, v: float | None) -> float | None:
+        """Silently coerce out-of-range delta to None."""
+        return clamp_delta(v)
 
     @computed_field
     @property
@@ -416,36 +476,76 @@ class ChainFetcher:
     def _parse_ticker(self, ticker: Ticker) -> OptionContract:
         """Parse a raw ib_insync Ticker into a clean OptionContract model.
 
-        Normalizes IBKR sentinel values (nan, -1) to None.
+        Normalizes IBKR sentinel values (nan, -1) to None.  Applies a
+        validation gate: inverted bid/ask spreads are corrected to None/None;
+        ValidationErrors are caught and a minimal identity-only fallback
+        contract is returned so the chain count remains stable.
 
         Args:
             ticker: Raw Ticker returned from reqTickers/reqTickersAsync.
 
         Returns:
-            OptionContract with all available fields populated.
+            OptionContract with all available fields populated, or a minimal
+            fallback if the contract data is too malformed to parse normally.
         """
         c = ticker.contract
         greeks = ticker.modelGreeks
 
-        return OptionContract(
-            symbol=c.symbol,
-            expiry=c.lastTradeDateOrContractMonth,
-            strike=c.strike,
-            right=c.right,
-            con_id=c.conId or None,
-            bid=_clean(ticker.bid),
-            ask=_clean(ticker.ask),
-            last=_clean(ticker.last),
-            volume=_clean_int(ticker.volume),
-            open_interest=_clean_int(
-                ticker.callOpenInterest if c.right == "C" else ticker.putOpenInterest
-            ),
-            implied_vol=_clean(greeks.impliedVol) if greeks else None,
-            delta=_clean(greeks.delta) if greeks else None,
-            gamma=_clean(greeks.gamma) if greeks else None,
-            theta=_clean(greeks.theta) if greeks else None,
-            vega=_clean(greeks.vega) if greeks else None,
-        )
+        raw_bid = _clean(ticker.bid)
+        raw_ask = _clean(ticker.ask)
+
+        if not is_bid_ask_consistent(raw_bid, raw_ask):
+            logger.warning(
+                "_parse_ticker: inverted spread for {} {} {:.0f}{} (bid={} > ask={}) — clearing both",
+                c.symbol, c.lastTradeDateOrContractMonth, c.strike, c.right,
+                raw_bid, raw_ask,
+            )
+            raw_bid = None
+            raw_ask = None
+
+        try:
+            contract = OptionContract(
+                symbol=c.symbol,
+                expiry=c.lastTradeDateOrContractMonth,
+                strike=c.strike,
+                right=c.right,
+                con_id=c.conId or None,
+                bid=raw_bid,
+                ask=raw_ask,
+                last=_clean(ticker.last),
+                volume=_clean_int(ticker.volume),
+                open_interest=_clean_int(
+                    ticker.callOpenInterest if c.right == "C" else ticker.putOpenInterest
+                ),
+                implied_vol=_clean(greeks.impliedVol) if greeks else None,
+                delta=_clean(greeks.delta) if greeks else None,
+                gamma=_clean(greeks.gamma) if greeks else None,
+                theta=_clean(greeks.theta) if greeks else None,
+                vega=_clean(greeks.vega) if greeks else None,
+            )
+        except ValidationError as exc:
+            logger.error(
+                "_parse_ticker: validation failed for {} {} {:.0f}{} — returning minimal fallback. errors={}",
+                c.symbol, c.lastTradeDateOrContractMonth, c.strike, c.right,
+                exc.errors(),
+            )
+            # model_construct bypasses validators so we can preserve the raw
+            # contract identity even when individual fields are malformed.
+            contract = OptionContract.model_construct(
+                symbol=c.symbol,
+                expiry=c.lastTradeDateOrContractMonth,
+                strike=c.strike,
+                right=c.right,
+                con_id=None,
+            )
+
+        if not has_any_price(contract.bid, contract.ask, contract.last) and contract.volume is None:
+            logger.debug(
+                "_parse_ticker: no price or volume data for {} {} {:.0f}{}",
+                contract.symbol, contract.expiry, contract.strike, contract.right,
+            )
+
+        return contract
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -42,6 +42,8 @@ class OptionContractRecord(Base):
     __tablename__ = "option_contracts"
     __table_args__ = (
         UniqueConstraint("snapshot_id", "con_id", name="uq_snapshot_contract"),
+        CheckConstraint("strike > 0", name="ck_option_contracts_strike_positive"),
+        CheckConstraint("right IN ('C', 'P')", name="ck_option_contracts_right_valid"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -86,6 +88,9 @@ class OptionTick(Base):
     __table_args__ = (
         Index("ix_option_ticks_con_id_received_at", "con_id", "received_at"),
         Index("ix_option_ticks_symbol_received_at", "symbol", "received_at"),
+        CheckConstraint("strike > 0", name="ck_option_ticks_strike_positive"),
+        CheckConstraint("right IN ('C', 'P')", name="ck_option_ticks_right_valid"),
+        CheckConstraint("con_id > 0", name="ck_option_ticks_con_id_positive"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -131,6 +136,8 @@ class ClassifiedTradeRecord(Base):
         Index("ix_classified_trades_symbol_at", "symbol", "classified_at"),
         Index("ix_classified_trades_con_id_at", "con_id", "classified_at"),
         Index("ix_classified_trades_symbol_aggressor_at", "symbol", "aggressor", "classified_at"),
+        CheckConstraint("strike > 0", name="ck_classified_trades_strike_positive"),
+        CheckConstraint("right IN ('C', 'P')", name="ck_classified_trades_right_valid"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -174,6 +181,8 @@ class UnusualSignalRecord(Base):
     __table_args__ = (
         Index("ix_unusual_signals_symbol_flagged_at", "symbol", "flagged_at"),
         Index("ix_unusual_signals_con_id_flagged_at", "con_id", "flagged_at"),
+        CheckConstraint("strike > 0", name="ck_unusual_signals_strike_positive"),
+        CheckConstraint("right IN ('C', 'P')", name="ck_unusual_signals_right_valid"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

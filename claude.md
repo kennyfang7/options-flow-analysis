@@ -26,7 +26,8 @@ options-flow/
 │   ├── __init__.py
 │   ├── connection/
 │   │   ├── __init__.py
-│   │   └── ibkr_client.py       # TWS/Gateway connect, disconnect, health check
+│   │   ├── ibkr_client.py       # TWS/Gateway connect, disconnect, health check
+│   │   └── rate_limiter.py      # Centralised async rate limiter (48 msg/sec, 55 hist/10 min)
 │   ├── data/
 │   │   ├── __init__.py
 │   │   ├── scanner.py           # Market scanners (unusual volume, OI changes)
@@ -57,7 +58,8 @@ options-flow/
 │   └── utils/
 │       ├── __init__.py
 │       ├── formatting.py        # Display helpers, currency, Greek symbols
-│       └── market_hours.py      # Market calendar, session awareness
+│       ├── market_hours.py      # Market calendar, session awareness
+│       └── validators.py        # IBKR data validation: price, strike, expiry, IV, delta guards
 ├── scripts/
 │   ├── run_scanner.py           # Entry: start flow scanning
 │   ├── backfill.py              # Backfill historical OI / volume
@@ -98,7 +100,8 @@ Build and test modules in this sequence — each depends on the ones before it:
 ## IBKR-Specific Notes
 - TWS or IB Gateway must be running locally (port 7497 for paper, 7496 for live)
 - `ib_insync` handles the socket connection — always use `IB()` singleton pattern
-- Rate limits: ~50 messages/sec to TWS; batch option chain requests
+- Rate limits: 50 msg/sec hard limit; 60 historical requests per 10 min hard limit
+- **RateLimiter** (`src/connection/rate_limiter.py`): centralised async limiter — `await limiter.acquire()` before any IBKR call; `await limiter.acquire("historical")` before `reqHistoricalData`. Defaults: 48 msg/sec, 55 hist/10 min (2 below each hard limit).
 - Market data requires subscriptions — user has live options package
 - Use `qualifyContracts()` before requesting data
 - Option contract format: `Stock` → `Option(symbol, expiry, strike, right)`
