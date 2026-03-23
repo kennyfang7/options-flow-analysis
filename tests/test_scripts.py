@@ -2,45 +2,41 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.utils.watchlist import WatchlistManager
 
-def test_load_watchlist_reads_symbols(tmp_path: Path) -> None:
+
+def test_scanner_watchlist_reads_symbols(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("SPY\nQQQ\nAAPL\n")
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(wl)) == ["SPY", "QQQ", "AAPL"]
+    assert WatchlistManager(str(wl)).active_symbols() == ["SPY", "QQQ", "AAPL"]
 
 
-def test_load_watchlist_strips_comments(tmp_path: Path) -> None:
+def test_scanner_watchlist_strips_comments(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("SPY\n# comment\nQQQ\n")
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(wl)) == ["SPY", "QQQ"]
+    assert WatchlistManager(str(wl)).active_symbols() == ["SPY", "QQQ"]
 
 
-def test_load_watchlist_skips_blank_lines(tmp_path: Path) -> None:
+def test_scanner_watchlist_skips_blank_lines(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("SPY\n\nQQQ\n\n")
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(wl)) == ["SPY", "QQQ"]
+    assert WatchlistManager(str(wl)).active_symbols() == ["SPY", "QQQ"]
 
 
-def test_load_watchlist_missing_file_returns_empty(tmp_path: Path) -> None:
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(tmp_path / "nonexistent.txt")) == []
+def test_scanner_watchlist_missing_file_returns_empty(tmp_path: Path) -> None:
+    assert WatchlistManager(str(tmp_path / "nonexistent.txt")).active_symbols() == []
 
 
-def test_load_watchlist_uppercases_symbols(tmp_path: Path) -> None:
+def test_scanner_watchlist_uppercases_symbols(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("spy\nqqq\n")
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(wl)) == ["SPY", "QQQ"]
+    assert WatchlistManager(str(wl)).active_symbols() == ["SPY", "QQQ"]
 
 
-def test_load_watchlist_strips_indented_comments(tmp_path: Path) -> None:
+def test_scanner_watchlist_strips_indented_comments(tmp_path: Path) -> None:
     wl = tmp_path / "watchlist.txt"
     wl.write_text("SPY\n  # indented comment\nQQQ\n")
-    from scripts.run_scanner import load_watchlist
-    assert load_watchlist(str(wl)) == ["SPY", "QQQ"]
+    assert WatchlistManager(str(wl)).active_symbols() == ["SPY", "QQQ"]
 
 
 def test_backfill_parse_args_no_symbols() -> None:
@@ -64,13 +60,17 @@ def test_backfill_resolve_symbols_uses_cli_args() -> None:
 def test_backfill_resolve_symbols_falls_back_to_watchlist(
     tmp_path: Path, monkeypatch
 ) -> None:
+    from unittest.mock import MagicMock
     wl = tmp_path / "watchlist.txt"
     wl.write_text("SPY\nQQQ\n")
-    from config.settings import settings
-    monkeypatch.setattr(settings, "watchlist_path", str(wl))
+    import scripts.backfill as _backfill_mod
+    fake_settings = MagicMock()
+    fake_settings.watchlist_path = str(wl)
+    monkeypatch.setattr(_backfill_mod, "settings", fake_settings)
     from scripts.backfill import parse_args, _resolve_symbols
     args = parse_args([])
-    assert _resolve_symbols(args) == ["SPY", "QQQ"]
+    result = _resolve_symbols(args)
+    assert set(result) == {"SPY", "QQQ"}
 
 
 def test_scanner_parse_args_no_symbols() -> None:

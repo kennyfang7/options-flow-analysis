@@ -59,7 +59,8 @@ options-flow/
 │       ├── __init__.py
 │       ├── formatting.py        # Display helpers, currency, Greek symbols
 │       ├── market_hours.py      # Market calendar, session awareness
-│       └── validators.py        # IBKR data validation: price, strike, expiry, IV, delta guards
+│       ├── validators.py        # IBKR data validation: price, strike, expiry, IV, delta guards
+│       └── watchlist.py         # WatchlistManager: JSON-backed ticker list with CRUD, groups, hot-reload
 ├── scripts/
 │   ├── run_scanner.py           # Entry: start flow scanning
 │   ├── backfill.py              # Backfill historical OI / volume

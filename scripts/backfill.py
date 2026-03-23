@@ -40,8 +40,8 @@ def _resolve_symbols(args: argparse.Namespace) -> list[str]:
     """
     if args.symbols:
         return [s.upper() for s in args.symbols]
-    from scripts.run_scanner import load_watchlist
-    return load_watchlist(settings.watchlist_path)
+    from src.utils.watchlist import WatchlistManager
+    return WatchlistManager(settings.watchlist_path).active_symbols()
 
 
 async def backfill(symbols: list[str]) -> None:

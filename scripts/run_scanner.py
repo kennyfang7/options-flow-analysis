@@ -3,33 +3,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from pathlib import Path
 
 from loguru import logger
 
 from config.settings import settings
-
-
-def load_watchlist(path: str) -> list[str]:
-    """Load ticker symbols from a newline-separated watchlist file.
-
-    Args:
-        path: Path to the watchlist file.
-
-    Returns:
-        List of uppercase ticker symbols; empty lines and # comments stripped.
-    """
-    p = Path(path)
-    if not p.exists():
-        logger.warning("Watchlist not found at {}, using empty list", path)
-        return []
-    symbols = [
-        s.upper()
-        for line in p.read_text().splitlines()
-        if (s := line.strip()) and not s.startswith("#")
-    ]
-    logger.info("Loaded {} symbols from {}", len(symbols), path)
-    return symbols
+from src.utils.watchlist import WatchlistManager
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -220,8 +198,10 @@ async def run_pipeline(symbols: list[str]) -> None:
 
 if __name__ == "__main__":
     args = parse_args()
-    symbols = [s.upper() for s in args.symbols] if args.symbols else load_watchlist(
-        settings.watchlist_path
+    symbols = (
+        [s.upper() for s in args.symbols]
+        if args.symbols
+        else WatchlistManager(settings.watchlist_path).active_symbols()
     )
     try:
         asyncio.run(run_pipeline(symbols))
