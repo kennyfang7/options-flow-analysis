@@ -217,8 +217,9 @@ def setup_callbacks(app: Dash, state: object) -> None:
     def update_sentiment(n_intervals: int, symbol: str) -> tuple[list, str]:
         try:
             snap = state.get_sentiment(symbol) if symbol else None
-            ts = f"Updated: {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC"
-            return _sentiment_kpis(snap), ts
+            ts = datetime.now(timezone.utc).strftime("%H:%M:%S") + " UTC"
+            status = f"Live  {ts}" if snap is not None else f"Waiting for pipeline data... ({ts})"
+            return _sentiment_kpis(snap), status
         except Exception:
             logger.exception("update_sentiment: failed")
             return _sentiment_kpis(None), "Error"

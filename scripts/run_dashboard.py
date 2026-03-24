@@ -63,7 +63,10 @@ def start_pipeline_thread(
         The started daemon Thread.
     """
     def _run() -> None:
-        asyncio.run(_pipeline(state, symbols))
+        try:
+            asyncio.run(_pipeline(state, symbols))
+        except Exception:
+            logger.exception("Dashboard pipeline thread crashed")
 
     thread = threading.Thread(target=_run, daemon=True, name="pipeline")
     thread.start()
@@ -230,16 +233,20 @@ async def _pipeline(
 
 
 if __name__ == "__main__":
-    from scripts.run_scanner import load_watchlist
     from src.dashboard.app import create_app
     from src.dashboard.shared_state import SharedState
+    from src.storage.db import init_db
+    from src.utils.watchlist import WatchlistManager
 
     args = parse_args()
     symbols = (
         [s.upper() for s in args.symbols]
         if args.symbols
-        else load_watchlist(settings.watchlist_path)
+        else WatchlistManager(settings.watchlist_path).active_symbols()
     )
+
+    # Ensure DB tables exist before Dash callbacks can fire
+    asyncio.run(init_db())
 
     state = SharedState()
     start_pipeline_thread(state, symbols)
