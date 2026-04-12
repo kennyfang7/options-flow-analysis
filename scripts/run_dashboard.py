@@ -65,8 +65,9 @@ def start_pipeline_thread(
     def _run() -> None:
         try:
             asyncio.run(_pipeline(state, symbols))
-        except Exception:
+        except Exception as exc:
             logger.exception("Dashboard pipeline thread crashed")
+            state.update_pipeline_status(f"Crashed: {exc}")
 
     thread = threading.Thread(target=_run, daemon=True, name="pipeline")
     thread.start()
@@ -105,6 +106,7 @@ async def _pipeline(
         load_chain_snapshot,
     )
 
+    state.update_pipeline_status("Connecting to IB Gateway...")
     await init_db()
 
     # All components require settings — pass singleton explicitly
@@ -118,6 +120,7 @@ async def _pipeline(
 
     async with IBKRClient() as client:
         await client.verify_connection()
+        state.update_pipeline_status("Connected — fetching option chains...")
 
         if not symbols:
             scanner = MarketScanner(client)
@@ -180,10 +183,18 @@ async def _pipeline(
                     "No contracts subscribed in dashboard pipeline — "
                     "check watchlist and IBKR connection."
                 )
+                state.update_pipeline_status(
+                    "Failed: 0 contracts subscribed — check IBKR connection and watchlist"
+                )
                 return
 
+            state.update_pipeline_status(
+                f"Running — {stream.subscribed_count} contracts subscribed"
+            )
             logger.success("Dashboard pipeline running ({} contracts).", stream.subscribed_count)
             last_purge = asyncio.get_running_loop().time()
+            ticks_seen = 0
+            trades_classified = 0
 
             while True:
                 try:
@@ -197,9 +208,21 @@ async def _pipeline(
                         last_purge = now
                     continue
 
+                ticks_seen += 1
                 trade = classifier.classify(tick)
                 if trade is None:
+                    if ticks_seen % 100 == 0:
+                        state.update_pipeline_status(
+                            f"Running — {stream.subscribed_count} contracts | "
+                            f"{ticks_seen} ticks, {trades_classified} trades classified"
+                        )
                     continue
+
+                trades_classified += 1
+                state.update_pipeline_status(
+                    f"Running — {stream.subscribed_count} contracts | "
+                    f"{ticks_seen} ticks, {trades_classified} trades classified"
+                )
 
                 enriched = greeks.enrich(trade)
                 sentiment.update(enriched)

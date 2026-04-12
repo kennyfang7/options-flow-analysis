@@ -61,6 +61,10 @@ def build_layout(
                         style={"width": "120px", "color": "#111", "fontFamily": "monospace"},
                     ),
                     html.Span(id="last-update", style={"color": "#888", "fontSize": "0.85em"}),
+                    html.Span(
+                        id="pipeline-status",
+                        style={"color": "#666", "fontSize": "0.8em", "marginLeft": "8px"},
+                    ),
                 ],
             ),
             html.Div(id="sentiment-section", style={"marginBottom": "16px", "flexWrap": "wrap"}),

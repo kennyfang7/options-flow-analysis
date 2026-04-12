@@ -33,6 +33,7 @@ class SharedState:
             max_alerts = settings.dashboard_max_alerts
         self._sentiment: dict[str, SentimentSnapshot] = {}
         self._alert_queue: queue.Queue[Alert] = queue.Queue(maxsize=max_alerts)
+        self._pipeline_status: str = "Starting..."
 
     def update_sentiment(self, snapshot: SentimentSnapshot) -> None:
         """Store the latest SentimentSnapshot for a symbol.
@@ -67,6 +68,24 @@ class SharedState:
             Dict mapping symbol -> SentimentSnapshot for all known symbols.
         """
         return dict(self._sentiment)
+
+    def update_pipeline_status(self, status: str) -> None:
+        """Set a human-readable pipeline status string.
+
+        Called from the asyncio pipeline thread. GIL ensures atomic str
+        assignment so no explicit lock is needed.
+
+        Args:
+            status: Short description of current pipeline state.
+        """
+        self._pipeline_status = status
+
+    def get_pipeline_status(self) -> str:
+        """Return the current pipeline status string.
+
+        Called from Dash callback thread.
+        """
+        return self._pipeline_status
 
     def push_alert(self, alert: Alert) -> None:
         """Enqueue an alert for display in the dashboard.

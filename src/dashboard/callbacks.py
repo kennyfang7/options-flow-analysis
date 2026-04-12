@@ -211,18 +211,20 @@ def setup_callbacks(app: Dash, state: object) -> None:
     @app.callback(
         Output("sentiment-section", "children"),
         Output("last-update", "children"),
+        Output("pipeline-status", "children"),
         Input("fast-interval", "n_intervals"),
         Input("symbol-dropdown", "value"),
     )
-    def update_sentiment(n_intervals: int, symbol: str) -> tuple[list, str]:
+    def update_sentiment(n_intervals: int, symbol: str) -> tuple[list, str, str]:
         try:
             snap = state.get_sentiment(symbol) if symbol else None
             ts = datetime.now(timezone.utc).strftime("%H:%M:%S") + " UTC"
-            status = f"Live  {ts}" if snap is not None else f"Waiting for pipeline data... ({ts})"
-            return _sentiment_kpis(snap), status
+            data_status = f"Live  {ts}" if snap is not None else f"Waiting for pipeline data... ({ts})"
+            pipeline_status = f"[{state.get_pipeline_status()}]"
+            return _sentiment_kpis(snap), data_status, pipeline_status
         except Exception:
             logger.exception("update_sentiment: failed")
-            return _sentiment_kpis(None), "Error"
+            return _sentiment_kpis(None), "Error", ""
 
     @app.callback(
         Output("signals-table", "data"),
