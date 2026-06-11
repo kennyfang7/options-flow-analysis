@@ -474,3 +474,77 @@ def test_purge_stale_always_returns_zero():
     det = _make_detector()
     assert det.purge_stale() == 0
     assert det.purge_stale(max_age_seconds=60.0) == 0
+
+
+# ---------------------------------------------------------------------------
+# PRE_EARNINGS reason tests
+# ---------------------------------------------------------------------------
+
+def test_pre_earnings_fires_within_window():
+    """days_to_earnings=3 (< default pre_earnings_days=5) → PRE_EARNINGS fires."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(pre_earnings_days=5)
+    trade = _make_trade()
+    trade = trade.model_copy(update={"days_to_earnings": 3})
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.PRE_EARNINGS in sig.reasons
+
+
+def test_pre_earnings_fires_on_earnings_day():
+    """days_to_earnings=0 (earnings today) → PRE_EARNINGS fires."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(pre_earnings_days=5)
+    trade = _make_trade()
+    trade = trade.model_copy(update={"days_to_earnings": 0})
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.PRE_EARNINGS in sig.reasons
+    assert sig.days_to_earnings == 0
+
+
+def test_pre_earnings_none_does_not_fire():
+    """days_to_earnings=None → PRE_EARNINGS does NOT fire."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(pre_earnings_days=5)
+    # _make_trade defaults to days_to_earnings=None (not set)
+    trade = _make_trade()
+    assert trade.days_to_earnings is None
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.PRE_EARNINGS not in sig.reasons
+
+
+def test_pre_earnings_beyond_window_does_not_fire():
+    """days_to_earnings=10 with pre_earnings_days=5 → does NOT fire."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(pre_earnings_days=5)
+    trade = _make_trade()
+    trade = trade.model_copy(update={"days_to_earnings": 10})
+    sig = det.score(trade)
+    if sig is not None:
+        assert SmartMoneyReason.PRE_EARNINGS not in sig.reasons
+
+
+def test_pre_earnings_sweep_aggressor_wins_priority():
+    """SWEEP_AGGRESSOR has higher priority than PRE_EARNINGS → top_reason=SWEEP_AGGRESSOR."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(pre_earnings_days=5)
+    # Sweep trade with earnings in 2 days — both reasons should fire
+    trade = _make_trade(trade_type_str="sweep", aggressor_str="buy")
+    trade = trade.model_copy(update={"days_to_earnings": 2})
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.SWEEP_AGGRESSOR in sig.reasons
+    assert SmartMoneyReason.PRE_EARNINGS in sig.reasons
+    assert sig.top_reason == SmartMoneyReason.SWEEP_AGGRESSOR
+
+
+def test_pre_earnings_signal_carries_days_to_earnings():
+    """SmartMoneySignal.days_to_earnings is populated from trade."""
+    det = _make_detector(pre_earnings_days=5)
+    trade = _make_trade()
+    trade = trade.model_copy(update={"days_to_earnings": 4})
+    sig = det.score(trade)
+    assert sig is not None
+    assert sig.days_to_earnings == 4

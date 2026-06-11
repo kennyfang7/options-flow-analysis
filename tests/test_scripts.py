@@ -106,6 +106,39 @@ def test_dashboard_parse_args_with_symbols_and_debug() -> None:
     assert args.debug is True
 
 
+def test_earnings_calendar_importable_from_src_utils() -> None:
+    """EarningsCalendar is importable from src.utils."""
+    from src.utils import EarningsCalendar
+    assert EarningsCalendar is not None
+
+
+def test_earnings_calendar_instantiates_without_network() -> None:
+    """EarningsCalendar() can be created without hitting any network."""
+    from src.utils.earnings import EarningsCalendar
+    cal = EarningsCalendar()
+    assert cal is not None
+
+
+def test_run_scanner_source_references_earnings_calendar() -> None:
+    """run_scanner.py source contains EarningsCalendar wiring."""
+    import inspect
+    from scripts import run_scanner
+    source = inspect.getsource(run_scanner.run_pipeline)
+    assert "EarningsCalendar" in source
+    assert "earnings_cal.prefetch" in source
+    assert "earnings_cal.get_days_to_earnings" in source
+
+
+def test_run_dashboard_source_references_earnings_calendar() -> None:
+    """run_dashboard.py source contains EarningsCalendar wiring."""
+    import inspect
+    from scripts import run_dashboard
+    source = inspect.getsource(run_dashboard._pipeline)
+    assert "EarningsCalendar" in source
+    assert "earnings_cal.prefetch" in source
+    assert "earnings_cal.get_days_to_earnings" in source
+
+
 def test_start_pipeline_thread_returns_daemon_thread() -> None:
     from unittest.mock import patch
     from src.dashboard.shared_state import SharedState

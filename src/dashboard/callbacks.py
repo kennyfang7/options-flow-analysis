@@ -99,6 +99,7 @@ def _signal_record_to_row(r: UnusualSignalRecord) -> dict:
         "Side":    r.aggressor,
         "Premium": f"${r.premium:,.0f}" if r.premium is not None else "—",
         "Reason":  r.top_reason,
+        "ErnDTE":  str(r.days_to_earnings) if r.days_to_earnings is not None else "—",
     }
 
 
@@ -118,6 +119,7 @@ def _trade_record_to_row(r: ClassifiedTradeRecord) -> dict:
         "Side":     r.aggressor,
         "Premium":  f"${r.premium:,.0f}" if r.premium is not None else "—",
         "Strength": f"{r.signal_strength:.1f}" if r.signal_strength is not None else "—",
+        "ErnDTE":   str(r.days_to_earnings) if r.days_to_earnings is not None else "—",
     }
 
 
@@ -138,7 +140,10 @@ def _alert_to_div(alert: Alert) -> html.Div:
         html.Div with three children: level badge, title+body, timestamp.
     """
     color = _LEVEL_COLORS.get(alert.level, "#888")
-    first_line = alert.body.split("\n")[0]
+    lines = alert.body.split("\n")
+    first_line = lines[0]
+    earnings_tag = next((ln for ln in lines if ln.startswith(("⚡", "📅"))), None)
+    tag_color = "#FF8C00" if earnings_tag and earnings_tag.startswith("⚡") else "#888"
     return html.Div(
         style={"padding": "4px 0", "borderBottom": "1px solid #333"},
         children=[
@@ -147,6 +152,10 @@ def _alert_to_div(alert: Alert) -> html.Div:
                 style={"color": color, "fontWeight": "bold"},
             ),
             html.Span(f"{alert.title} — {first_line}"),
+            *(
+                [html.Span(f" {earnings_tag}", style={"color": tag_color, "fontSize": "0.85em"})]
+                if earnings_tag else []
+            ),
             html.Span(
                 f" {alert.emitted_at.strftime('%H:%M:%S')}",
                 style={"color": "#888", "fontSize": "0.85em"},

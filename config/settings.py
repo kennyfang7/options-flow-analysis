@@ -120,6 +120,12 @@ class Settings(BaseSettings):
         ge=0,
         le=1.0,
     )
+    pre_earnings_days: int = Field(
+        default=5,
+        description="Flag flow within N days of next earnings event",
+        ge=1,
+        le=30,
+    )
 
     # Alert Endpoints
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")

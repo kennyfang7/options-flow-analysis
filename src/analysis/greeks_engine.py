@@ -285,6 +285,7 @@ class EnrichedTrade(ClassifiedTrade):
     days_to_expiry: int = 0
     moneyness: Moneyness = Moneyness.UNKNOWN
     iv_source: str = "unavailable"
+    days_to_earnings: int | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -160,6 +160,7 @@ class ClassifiedTradeRecord(Base):
     signal_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     window_ticks: Mapped[int] = mapped_column(Integer, nullable=False)
+    days_to_earnings: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -205,5 +206,6 @@ class UnusualSignalRecord(Base):
 
     top_reason: Mapped[str] = mapped_column(String, nullable=False)     # UnusualReason.value
     reasons: Mapped[str] = mapped_column(String, nullable=False)        # JSON array
+    days_to_earnings: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     flagged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -796,3 +796,184 @@ async def test_load_chain_snapshot_different_symbols_isolated(async_db_session):
 
     result = await load_chain_snapshot(async_db_session, "AAPL")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# days_to_earnings round-trip tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_insert_classified_trade_days_to_earnings_none(async_db_session):
+    """days_to_earnings defaults to None when trade has no earnings data."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_classified_trade
+    from src.storage.models import ClassifiedTradeRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=11111, expiry="20260620", strike=500.0, right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=1.0, ask=1.10, last=1.05, last_size=100, underlying_price=500.0,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=None, delta=None,
+        trade_type=TradeType.UNKNOWN, aggressor=Aggressor.BUY,
+        spread_position=None, effective_price=1.05, last_size=100, premium=10500.0,
+        signal_strength=1.0, volume_delta=100, window_ticks=1,
+        timestamp=tick.timestamp, tick=tick,
+    )
+    trade_id = await insert_classified_trade(async_db_session, trade)
+
+    result = await async_db_session.execute(
+        select(ClassifiedTradeRecord).where(ClassifiedTradeRecord.id == trade_id)
+    )
+    record = result.scalar_one()
+    assert record.days_to_earnings is None
+
+
+@pytest.mark.asyncio
+async def test_insert_classified_trade_days_to_earnings_value(async_db_session):
+    """days_to_earnings round-trips correctly when enriched trade has a value."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_classified_trade
+    from src.storage.models import ClassifiedTradeRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.analysis.greeks_engine import EnrichedTrade, Moneyness
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="AAPL", con_id=22222, expiry="20260620", strike=200.0, right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=2.0, ask=2.20, last=2.10, last_size=200, underlying_price=200.0,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=None, delta=None,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=None, effective_price=2.10, last_size=200, premium=42000.0,
+        signal_strength=2.0, volume_delta=200, window_ticks=1,
+        timestamp=tick.timestamp, tick=tick,
+    )
+    enriched = EnrichedTrade(
+        **trade.model_dump(exclude={"tick"}),
+        tick=trade.tick,
+        days_to_expiry=10,
+        moneyness=Moneyness.ATM,
+        iv_source="unavailable",
+        days_to_earnings=3,
+    )
+    trade_id = await insert_classified_trade(async_db_session, enriched)
+
+    result = await async_db_session.execute(
+        select(ClassifiedTradeRecord).where(ClassifiedTradeRecord.id == trade_id)
+    )
+    record = result.scalar_one()
+    assert record.days_to_earnings == 3
+
+
+@pytest.mark.asyncio
+async def test_insert_unusual_signal_days_to_earnings_none(async_db_session):
+    """days_to_earnings stored as NULL when signal's trade has no earnings data."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_unusual_signal
+    from src.storage.models import UnusualSignalRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.analysis.unusual_detector import UnusualReason, UnusualSignal
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="SPY", con_id=33333, expiry="20260620", strike=500.0, right="P",
+        timestamp=datetime.now(timezone.utc),
+        bid=3.0, ask=3.30, last=3.15, last_size=300, underlying_price=500.0,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=None, delta=None,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=None, effective_price=3.15, last_size=300, premium=94500.0,
+        signal_strength=3.0, volume_delta=300, window_ticks=1,
+        timestamp=tick.timestamp, tick=tick,
+    )
+    signal = UnusualSignal(
+        symbol=trade.symbol, con_id=trade.con_id, expiry=trade.expiry,
+        right=trade.right, strike=trade.strike, trade_type=trade.trade_type,
+        aggressor=trade.aggressor, premium=trade.premium,
+        volume_delta=trade.volume_delta, signal_strength=trade.signal_strength,
+        delta=None, underlying_price=trade.underlying_price,
+        implied_vol=None, effective_price=trade.effective_price,
+        reasons=[UnusualReason.PREMIUM_SIZE],
+        top_reason=UnusualReason.PREMIUM_SIZE,
+        flagged_at=datetime.now(timezone.utc),
+        trade=trade,
+    )
+    signal_id = await insert_unusual_signal(async_db_session, signal)
+
+    result = await async_db_session.execute(
+        select(UnusualSignalRecord).where(UnusualSignalRecord.id == signal_id)
+    )
+    record = result.scalar_one()
+    assert record.days_to_earnings is None
+
+
+@pytest.mark.asyncio
+async def test_insert_unusual_signal_days_to_earnings_value(async_db_session):
+    """days_to_earnings round-trips when trade is an EnrichedTrade with a value."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from src.storage import insert_unusual_signal
+    from src.storage.models import UnusualSignalRecord
+    from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
+    from src.analysis.greeks_engine import EnrichedTrade, Moneyness
+    from src.analysis.unusual_detector import UnusualReason, UnusualSignal
+    from src.data.tick_stream import TickUpdate
+
+    tick = TickUpdate(
+        symbol="TSLA", con_id=44444, expiry="20260620", strike=300.0, right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=5.0, ask=5.50, last=5.25, last_size=400, underlying_price=300.0,
+    )
+    trade = ClassifiedTrade(
+        symbol=tick.symbol, con_id=tick.con_id, expiry=tick.expiry,
+        right=tick.right, strike=tick.strike, underlying_price=tick.underlying_price,
+        implied_vol=None, delta=None,
+        trade_type=TradeType.BLOCK, aggressor=Aggressor.BUY,
+        spread_position=None, effective_price=5.25, last_size=400, premium=210000.0,
+        signal_strength=4.0, volume_delta=400, window_ticks=1,
+        timestamp=tick.timestamp, tick=tick,
+    )
+    enriched = EnrichedTrade(
+        **trade.model_dump(exclude={"tick"}),
+        tick=trade.tick,
+        days_to_expiry=5,
+        moneyness=Moneyness.OTM,
+        iv_source="unavailable",
+        days_to_earnings=2,
+    )
+    signal = UnusualSignal(
+        symbol=enriched.symbol, con_id=enriched.con_id, expiry=enriched.expiry,
+        right=enriched.right, strike=enriched.strike, trade_type=enriched.trade_type,
+        aggressor=enriched.aggressor, premium=enriched.premium,
+        volume_delta=enriched.volume_delta, signal_strength=enriched.signal_strength,
+        delta=None, underlying_price=enriched.underlying_price,
+        implied_vol=None, effective_price=enriched.effective_price,
+        reasons=[UnusualReason.PREMIUM_SIZE],
+        top_reason=UnusualReason.PREMIUM_SIZE,
+        flagged_at=datetime.now(timezone.utc),
+        trade=enriched,
+    )
+    signal_id = await insert_unusual_signal(async_db_session, signal)
+
+    result = await async_db_session.execute(
+        select(UnusualSignalRecord).where(UnusualSignalRecord.id == signal_id)
+    )
+    record = result.scalar_one()
+    assert record.days_to_earnings == 2

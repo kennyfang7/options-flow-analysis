@@ -162,6 +162,14 @@ class AlertRules:
                 f"| Underlying: {_fmt_premium(signal.underlying_price)}"
             ),
         ]
+        dte: int | None = getattr(signal.trade, "days_to_earnings", None)
+        if dte is not None:
+            if dte == 0:
+                body_lines.append("⚡ Earnings TODAY")
+            elif dte <= self._settings.pre_earnings_days:
+                body_lines.append(f"⚡ Earnings in {dte}d")
+            else:
+                body_lines.append(f"📅 Earnings in {dte}d")
 
         premium_str = f"{signal.premium:,.0f}" if signal.premium is not None else "N/A"
         logger.debug(
@@ -235,6 +243,13 @@ class AlertRules:
             ),
             f"All signals: {', '.join(r.value for r in signal.reasons)}",
         ]
+        if signal.days_to_earnings is not None:
+            if signal.days_to_earnings == 0:
+                body_lines.append("⚡ Earnings TODAY")
+            elif signal.days_to_earnings <= self._settings.pre_earnings_days:
+                body_lines.append(f"⚡ Earnings in {signal.days_to_earnings}d")
+            else:
+                body_lines.append(f"📅 Earnings in {signal.days_to_earnings}d")
 
         logger.debug(
             "evaluate_smart_money: {} {} level={} conf={:.2f}",

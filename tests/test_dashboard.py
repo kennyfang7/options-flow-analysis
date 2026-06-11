@@ -254,7 +254,7 @@ class TestPureFunctions:
 
     def test_signal_record_to_row_expected_keys(self):
         row = _signal_record_to_row(_make_signal_record())
-        assert set(row.keys()) == {"Time", "Symbol", "Type", "Side", "Premium", "Reason"}
+        assert set(row.keys()) == {"Time", "Symbol", "Type", "Side", "Premium", "Reason", "ErnDTE"}
 
     def test_signal_record_to_row_none_premium_shows_dash(self):
         row = _signal_record_to_row(_make_signal_record(premium=None))
@@ -266,7 +266,7 @@ class TestPureFunctions:
 
     def test_trade_record_to_row_expected_keys(self):
         row = _trade_record_to_row(_make_trade_record())
-        assert set(row.keys()) == {"Time", "Symbol", "Type", "Side", "Premium", "Strength"}
+        assert set(row.keys()) == {"Time", "Symbol", "Type", "Side", "Premium", "Strength", "ErnDTE"}
 
     def test_alert_to_div_returns_html_div(self):
         from dash import html
@@ -282,6 +282,58 @@ class TestPureFunctions:
         div = _alert_to_div(_make_alert(level=AlertLevel.MEDIUM))
         badge = div.children[0]
         assert badge.style["color"] == "#FF8C00"
+
+    def test_alert_to_div_earnings_today_tag_rendered(self):
+        """⚡ earnings tag is rendered as an orange inline span."""
+        from src.alerts.rules import Alert, AlertLevel
+        from datetime import datetime, timezone
+        alert = Alert(
+            symbol="SPY", level=AlertLevel.HIGH,
+            title="SPY UNUSUAL", body="BLOCK BUY | 500 cts\n⚡ Earnings TODAY",
+            source="unusual", emitted_at=datetime.now(timezone.utc),
+            metadata={},
+        )
+        div = _alert_to_div(alert)
+        # children: [badge, body_span, earnings_span, time_span]
+        texts = [
+            getattr(c, "children", "") for c in div.children
+            if hasattr(c, "children") and isinstance(getattr(c, "children", None), str)
+        ]
+        assert any("⚡ Earnings TODAY" in t for t in texts)
+        # earnings span should be orange
+        earnings_span = next(
+            c for c in div.children
+            if hasattr(c, "children") and "⚡" in str(getattr(c, "children", ""))
+        )
+        assert earnings_span.style["color"] == "#FF8C00"
+
+    def test_alert_to_div_no_earnings_tag_unchanged(self):
+        """Alert body with no ⚡/📅 tag renders without earnings span."""
+        div = _alert_to_div(_make_alert())
+        # All span texts — none should contain ⚡ or 📅
+        all_texts = " ".join(
+            str(getattr(c, "children", "")) for c in div.children
+        )
+        assert "⚡" not in all_texts
+        assert "📅" not in all_texts
+
+    def test_signal_columns_include_erndte(self):
+        from src.dashboard.layouts import _SIGNAL_COLUMNS
+        assert "ErnDTE" in _SIGNAL_COLUMNS
+
+    def test_trade_columns_include_erndte(self):
+        from src.dashboard.layouts import _TRADE_COLUMNS
+        assert "ErnDTE" in _TRADE_COLUMNS
+
+    def test_signal_record_erndte_none_shows_dash(self):
+        """UnusualSignalRecord without days_to_earnings shows '—'."""
+        row = _signal_record_to_row(_make_signal_record())
+        assert row["ErnDTE"] == "—"
+
+    def test_trade_record_erndte_none_shows_dash(self):
+        """ClassifiedTradeRecord without days_to_earnings shows '—'."""
+        row = _trade_record_to_row(_make_trade_record())
+        assert row["ErnDTE"] == "—"
 
 
 import pytest

@@ -4,8 +4,8 @@ from dash import dcc, html
 from dash import dash_table
 
 
-_SIGNAL_COLUMNS = ["Time", "Symbol", "Type", "Side", "Premium", "Reason"]
-_TRADE_COLUMNS  = ["Time", "Symbol", "Type", "Side", "Premium", "Strength"]
+_SIGNAL_COLUMNS = ["Time", "Symbol", "Type", "Side", "Premium", "Reason", "ErnDTE"]
+_TRADE_COLUMNS  = ["Time", "Symbol", "Type", "Side", "Premium", "Strength", "ErnDTE"]
 
 _TABLE_STYLE_HEADER = {"backgroundColor": "#222", "color": "#eee", "fontWeight": "bold"}
 _TABLE_STYLE_DATA   = {"backgroundColor": "#1a1a1a", "color": "#eee"}

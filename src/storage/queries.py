@@ -282,6 +282,7 @@ async def insert_classified_trade(
         signal_strength=trade.signal_strength,
         volume_delta=trade.volume_delta,
         window_ticks=trade.window_ticks,
+        days_to_earnings=getattr(trade, "days_to_earnings", None),
         classified_at=trade.timestamp,
     )
     session.add(record)
@@ -322,6 +323,7 @@ async def insert_unusual_signal(
         signal_strength=signal.signal_strength,
         top_reason=signal.top_reason.value,
         reasons=json.dumps([r.value for r in signal.reasons]),
+        days_to_earnings=getattr(signal.trade, "days_to_earnings", None),
         classified_at=signal.trade.timestamp,
         flagged_at=signal.flagged_at,
     )

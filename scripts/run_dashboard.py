@@ -117,6 +117,8 @@ async def _pipeline(
     smart_money = SmartMoneyDetector(settings)
     rules = AlertRules(settings)
     notifier = Notifier(settings)
+    from src.utils.earnings import EarningsCalendar
+    earnings_cal = EarningsCalendar()
 
     async with IBKRClient() as client:
         await client.verify_connection()
@@ -127,6 +129,9 @@ async def _pipeline(
             results = await scanner.scan_unusual_volume()
             symbols = list(dict.fromkeys(r.symbol for r in results))
             logger.info("Scanner discovered {} symbols: {}", len(symbols), symbols)
+
+        await earnings_cal.prefetch(symbols)
+        logger.info("Earnings calendar pre-fetched for {} symbols.", len(symbols))
 
         fetcher = ChainFetcher(client)
         purge_interval = 3600.0
@@ -225,6 +230,9 @@ async def _pipeline(
                 )
 
                 enriched = greeks.enrich(trade)
+                dte = await earnings_cal.get_days_to_earnings(enriched.symbol)
+                if dte is not None:
+                    enriched = enriched.model_copy(update={"days_to_earnings": dte})
                 sentiment.update(enriched)
 
                 snap = sentiment.snapshot(enriched.symbol)

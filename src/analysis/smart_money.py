@@ -39,6 +39,10 @@ class SmartMoneyReason(str, Enum):
     # volume_delta >= unusual_volume_multiplier * min_block_size.
     # Catches: volume far exceeding a normal institutional block baseline.
 
+    PRE_EARNINGS = "pre_earnings"
+    # days_to_earnings is within settings.pre_earnings_days.
+    # Catches: flow positioned just before an earnings catalyst.
+
     LARGE_BLOCK = "large_block"
     # TradeType.BLOCK + premium >= unusual_premium_threshold.
     # Catches: single very large block — concentrated institutional capital.
@@ -51,6 +55,7 @@ class SmartMoneyReason(str, Enum):
 _CONFIDENCE_WEIGHTS: dict[SmartMoneyReason, float] = {
     SmartMoneyReason.SWEEP_AGGRESSOR: 0.40,
     SmartMoneyReason.BIG_OTM_BET:     0.45,
+    SmartMoneyReason.PRE_EARNINGS:    0.30,
     SmartMoneyReason.NEAR_EXPIRY_OTM: 0.35,
     SmartMoneyReason.UNUSUAL_VOLUME:  0.35,
     SmartMoneyReason.LARGE_BLOCK:     0.30,
@@ -59,6 +64,7 @@ _CONFIDENCE_WEIGHTS: dict[SmartMoneyReason, float] = {
 _PRIORITY: list[SmartMoneyReason] = [
     SmartMoneyReason.SWEEP_AGGRESSOR,
     SmartMoneyReason.BIG_OTM_BET,
+    SmartMoneyReason.PRE_EARNINGS,
     SmartMoneyReason.NEAR_EXPIRY_OTM,
     SmartMoneyReason.UNUSUAL_VOLUME,
     SmartMoneyReason.LARGE_BLOCK,
@@ -120,6 +126,8 @@ class SmartMoneySignal(BaseModel):
     implied_vol: float | None
     iv_source: str
     underlying_price: float | None
+
+    days_to_earnings: int | None = None
 
     reasons: list[SmartMoneyReason]
     top_reason: SmartMoneyReason
@@ -195,7 +203,14 @@ class SmartMoneyDetector:
         ):
             reasons.append(SmartMoneyReason.BIG_OTM_BET)
 
-        # 3. NEAR_EXPIRY_OTM — time-sensitive leveraged speculation
+        # 3. PRE_EARNINGS — flow positioned just before an earnings catalyst
+        if (
+            trade.days_to_earnings is not None
+            and 0 <= trade.days_to_earnings <= s.pre_earnings_days
+        ):
+            reasons.append(SmartMoneyReason.PRE_EARNINGS)
+
+        # 4. NEAR_EXPIRY_OTM — time-sensitive leveraged speculation
         if (
             trade.days_to_expiry <= s.near_expiry_days
             and trade.moneyness == Moneyness.OTM
@@ -203,11 +218,11 @@ class SmartMoneyDetector:
         ):
             reasons.append(SmartMoneyReason.NEAR_EXPIRY_OTM)
 
-        # 4. UNUSUAL_VOLUME — volume far exceeds institutional block baseline
+        # 5. UNUSUAL_VOLUME — volume far exceeds institutional block baseline
         if trade.volume_delta >= s.unusual_volume_multiplier * s.min_block_size:
             reasons.append(SmartMoneyReason.UNUSUAL_VOLUME)
 
-        # 5. LARGE_BLOCK — single very large concentrated position
+        # 6. LARGE_BLOCK — single very large concentrated position
         if (
             trade.trade_type == TradeType.BLOCK
             and trade.premium is not None
@@ -250,6 +265,7 @@ class SmartMoneyDetector:
             implied_vol=trade.implied_vol,
             iv_source=trade.iv_source,
             underlying_price=trade.underlying_price,
+            days_to_earnings=trade.days_to_earnings,
             reasons=reasons,
             top_reason=top_reason,
             confidence=confidence,
