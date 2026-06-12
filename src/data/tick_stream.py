@@ -22,6 +22,8 @@ from src.utils.validators import (
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
 
+from src.connection.rate_limiter import RateLimiter
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -190,14 +192,18 @@ class TickStream:
             await stream.unsubscribe()
     """
 
-    def __init__(self, client: IBKRClient) -> None:
+    def __init__(self, client: IBKRClient, limiter: RateLimiter | None = None) -> None:
         """Initialize with a connected IBKRClient.
 
         Args:
             client: An active IBKRClient instance. Must already be connected.
+            limiter: Shared RateLimiter instance. If None, a new one is created.
+                Pass the same limiter to ChainFetcher, TickStream, and MarketScanner
+                so the 48 msg/sec budget is enforced across all three.
         """
         self._client = client
         self._ib = client.ib
+        self._limiter = limiter if limiter is not None else RateLimiter()
         self._queue: asyncio.Queue[TickUpdate] = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
         # Maps con_id -> (ib_insync.Option contract, underlying_price at subscription time)
         self._subscriptions: dict[int, tuple[Option, float | None]] = {}
@@ -277,6 +283,7 @@ class TickStream:
             ibkr_contract.currency = "USD"
             ibkr_contract.secType = "OPT"
 
+            await self._limiter.acquire()
             ticker = self._ib.reqMktData(
                 ibkr_contract,
                 genericTickList=GENERIC_TICK_LIST,

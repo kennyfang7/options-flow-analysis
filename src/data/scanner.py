@@ -11,6 +11,8 @@ from config.settings import settings as _settings
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
 
+from src.connection.rate_limiter import RateLimiter
+
 
 # ---------------------------------------------------------------------------
 # Scan code constants
@@ -87,15 +89,19 @@ class MarketScanner:
                 print(r.rank, r.symbol, r.scan_code)
     """
 
-    def __init__(self, client: IBKRClient) -> None:
+    def __init__(self, client: IBKRClient, limiter: RateLimiter | None = None) -> None:
         """Initialize with a connected IBKRClient.
 
         Args:
             client: An active IBKRClient instance. Must already be connected.
+            limiter: Shared RateLimiter instance. If None, a new one is created.
+                Pass the same limiter to ChainFetcher, TickStream, and MarketScanner
+                so the 48 msg/sec budget is enforced across all three.
         """
         self._client = client
         self._ib = client.ib
         self._settings = _settings
+        self._limiter = limiter if limiter is not None else RateLimiter()
 
     # ------------------------------------------------------------------
     # Public API
@@ -143,6 +149,7 @@ class MarketScanner:
         )
 
         try:
+            await self._limiter.acquire()
             raw_results = await self._ib.reqScannerSubscriptionAsync(sub)
         except Exception as exc:
             logger.exception("scan: reqScannerSubscriptionAsync failed for {}: {}", scan_code, exc)

@@ -54,15 +54,19 @@ async def backfill(symbols: list[str]) -> None:
         symbols: Underlying ticker symbols to snapshot (e.g. ["SPY", "QQQ"]).
     """
     from src.connection.ibkr_client import IBKRClient
+    from src.connection.rate_limiter import RateLimiter
     from src.data.chain_fetcher import ChainFetcher
     from src.storage.db import get_session, init_db
     from src.storage.queries import insert_chain_snapshot
 
     await init_db()
 
+    # One shared limiter for all chain fetches in this session.
+    limiter = RateLimiter()
+
     async with IBKRClient() as client:
         await client.verify_connection()
-        fetcher = ChainFetcher(client)
+        fetcher = ChainFetcher(client, limiter)
 
         saved = 0
         failed = 0

@@ -53,6 +53,7 @@ async def run_pipeline(symbols: list[str]) -> None:
     from src.analysis.smart_money import SmartMoneyDetector
     from src.analysis.unusual_detector import UnusualDetector
     from src.connection.ibkr_client import IBKRClient
+    from src.connection.rate_limiter import RateLimiter
     from src.data.chain_fetcher import ChainFetcher
     from src.data.scanner import MarketScanner
     from src.data.tick_stream import MAX_MKT_DATA_LINES, TickStream
@@ -77,11 +78,14 @@ async def run_pipeline(symbols: list[str]) -> None:
     from src.utils.earnings import EarningsCalendar
     earnings_cal = EarningsCalendar()
 
+    # One shared limiter so the 48 msg/sec budget is enforced across all IBKR components.
+    limiter = RateLimiter()
+
     async with IBKRClient() as client:
         await client.verify_connection()
 
         if not symbols:
-            scanner = MarketScanner(client)
+            scanner = MarketScanner(client, limiter)
             results = await scanner.scan_unusual_volume()
             # deduplicate while preserving rank order
             symbols = list(dict.fromkeys(r.symbol for r in results))
@@ -90,12 +94,12 @@ async def run_pipeline(symbols: list[str]) -> None:
         await earnings_cal.prefetch(symbols)
         logger.info("Earnings calendar pre-fetched for {} symbols.", len(symbols))
 
-        fetcher = ChainFetcher(client)
+        fetcher = ChainFetcher(client, limiter)
         purge_interval = 3600.0  # prune stale windows every hour
 
         # Enter TickStream before symbol loop so we can subscribe
         # per-symbol with underlying_price and enforce the 95-contract cap.
-        async with TickStream(client) as stream:
+        async with TickStream(client, limiter) as stream:
             for symbol in symbols:
                 try:
                     # Try DB cache first — avoid redundant IBKR chain fetches on restart

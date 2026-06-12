@@ -23,6 +23,8 @@ from src.utils.validators import (
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
 
+from src.connection.rate_limiter import RateLimiter
+
 
 # ---------------------------------------------------------------------------
 # Domain models
@@ -215,14 +217,18 @@ class ChainFetcher:
             df = snapshot.to_dataframe()
     """
 
-    def __init__(self, client: IBKRClient) -> None:
+    def __init__(self, client: IBKRClient, limiter: RateLimiter | None = None) -> None:
         """Initialize with a connected IBKRClient.
 
         Args:
             client: An active IBKRClient instance. Must already be connected.
+            limiter: Shared RateLimiter instance. If None, a new one is created.
+                Pass the same limiter to ChainFetcher, TickStream, and MarketScanner
+                so the 48 msg/sec budget is enforced across all three.
         """
         self._client = client
         self._ib = client.ib
+        self._limiter = limiter if limiter is not None else RateLimiter()
 
     # ------------------------------------------------------------------
     # Public API
@@ -313,6 +319,7 @@ class ChainFetcher:
             ValueError: If IBKR cannot qualify the contract.
         """
         stock = Stock(symbol, "SMART", "USD")
+        await self._limiter.acquire()
         qualified = await self._ib.qualifyContractsAsync(stock)
         if not qualified or qualified[0].conId == 0:
             raise ValueError(f"Could not qualify underlying: {symbol}")
@@ -331,7 +338,13 @@ class ChainFetcher:
         Raises:
             ValueError: If price cannot be determined.
         """
-        [ticker] = await self._ib.reqTickersAsync(stock)
+        await self._limiter.acquire()
+        tickers = await self._ib.reqTickersAsync(stock)
+        if len(tickers) != 1:
+            raise ValueError(
+                f"Expected exactly 1 ticker for {stock.symbol}, got {len(tickers)}"
+            )
+        [ticker] = tickers
         price = _clean(ticker.midpoint()) or _clean(ticker.last) or _clean(ticker.close)
         if price is None:
             raise ValueError(f"Could not determine price for {stock.symbol}")
@@ -352,6 +365,7 @@ class ChainFetcher:
         Raises:
             ValueError: If no chain parameters are found.
         """
+        await self._limiter.acquire()
         params = await self._ib.reqSecDefOptParamsAsync(
             stock.symbol, "", stock.secType, stock.conId
         )
@@ -437,10 +451,11 @@ class ChainFetcher:
 
         for idx, batch in enumerate(batches, 1):
             logger.debug("Qualifying batch {}/{} ({} contracts)", idx, len(batches), len(batch))
+            await self._limiter.acquire()
             result = await self._ib.qualifyContractsAsync(*batch)
             qualified.extend(c for c in result if c.conId != 0)
             if idx < len(batches):
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)  # settlement delay — NOT rate limiting (RateLimiter handles pacing)
 
         return qualified
 
@@ -464,12 +479,13 @@ class ChainFetcher:
 
         for idx, batch in enumerate(batches, 1):
             logger.debug("Fetching market data batch {}/{}", idx, len(batches))
+            await self._limiter.acquire()
             result = await self._ib.reqTickersAsync(*batch)
             tickers.extend(result)
             if idx < len(batches):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.5)  # settlement delay so IBKR market data populates — NOT rate limiting (RateLimiter handles pacing)
 
-        # Allow data to populate after the final batch
+        # Allow data to populate after the final batch — settlement delay, not rate limiting
         await asyncio.sleep(2)
         return tickers
 
