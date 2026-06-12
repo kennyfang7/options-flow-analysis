@@ -153,9 +153,6 @@ class UnusualDetector:
         Evaluates four independent threshold conditions. Returns an UnusualSignal
         if any condition fires, otherwise None.
 
-        MULTI_LEG trades are skipped — premium and delta semantics differ
-        for multi-leg strategies. Revisit when MULTI_LEG detection is built.
-
         Args:
             trade: ClassifiedTrade from FlowClassifier.classify().
 
@@ -164,10 +161,6 @@ class UnusualDetector:
         """
         s = self._settings
         con_id = trade.con_id
-
-        # Skip MULTI_LEG — detection not yet implemented
-        if trade.trade_type == TradeType.MULTI_LEG:
-            return None
 
         # Update OI cache and last-seen timestamp.
         # Use trade.timestamp (tick receipt time) rather than wall-clock now so

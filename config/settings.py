@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     classifier_window_seconds: float = Field(
         default=30.0, description="Max age of ticks kept in classifier in-memory window"
     )
+    multi_leg_window_seconds: float = Field(
+        default=1.0,
+        gt=0,
+        description="Seconds within which two distinct option contracts on the same "
+                    "underlying must print to be tagged as MULTI_LEG.",
+    )
     aggressor_buy_threshold: float = Field(
         default=0.70, description="Spread position >= this → BUY aggressor"
     )

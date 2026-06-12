@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
@@ -8,6 +8,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from config.settings import Settings
+from src.analysis.flow_classifier import ClassifiedTrade, MultiLegStrategy, TradeType
 from src.analysis.smart_money import SmartMoneySignal
 from src.analysis.unusual_detector import UnusualReason, UnusualSignal
 
@@ -95,6 +96,63 @@ def _fmt_pct(val: float | None) -> str:
 def _fmt_float(val: float | None, decimals: int = 2) -> str:
     """Format a float to fixed decimals, or 'N/A' when unavailable."""
     return f"{val:.{decimals}f}" if val is not None else "N/A"
+
+
+# ---------------------------------------------------------------------------
+# MultiLegBuffer
+# ---------------------------------------------------------------------------
+
+
+class MultiLegBuffer:
+    """Groups MULTI_LEG legs by strategy_group; flushes completed strategies.
+
+    Allows the orchestration layer to emit one Alert per strategy instance
+    rather than one per leg.
+
+    Example:
+        buffer = MultiLegBuffer(settings.multi_leg_window_seconds)
+        # on each qualifying tick:
+        if trade and trade.trade_type == TradeType.MULTI_LEG:
+            buffer.add(trade)
+        # periodically:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.multi_leg_window_seconds)
+        for group in buffer.flush_completed(cutoff):
+            alert = rules.evaluate_multi_leg_strategy(group)
+
+    Args:
+        window_seconds: multi_leg_window_seconds from settings.
+    """
+
+    def __init__(self, window_seconds: float) -> None:
+        self._window_seconds = window_seconds
+        self._groups: dict[str, list[ClassifiedTrade]] = {}
+
+    def add(self, trade: ClassifiedTrade) -> None:
+        """Buffer a MULTI_LEG leg. Non-MULTI_LEG / group-less trades are silently ignored.
+
+        Args:
+            trade: ClassifiedTrade to buffer.
+        """
+        if trade.trade_type != TradeType.MULTI_LEG or trade.strategy_group is None:
+            return
+        if trade.strategy_group not in self._groups:
+            self._groups[trade.strategy_group] = []
+        self._groups[trade.strategy_group].append(trade)
+
+    def flush_completed(self, cutoff: datetime) -> list[list[ClassifiedTrade]]:
+        """Return groups whose most-recent leg arrived before cutoff, removing them.
+
+        Args:
+            cutoff: Groups with max(leg.timestamp) < cutoff are considered complete.
+
+        Returns:
+            List of strategy groups; each group is a list of ClassifiedTrade legs.
+        """
+        done_keys = [
+            k for k, trades in self._groups.items()
+            if max(t.timestamp for t in trades) < cutoff
+        ]
+        return [self._groups.pop(k) for k in done_keys]
 
 
 # ---------------------------------------------------------------------------
@@ -274,5 +332,71 @@ class AlertRules:
                 "volume_delta": signal.volume_delta,
                 "top_reason": signal.top_reason.value,
                 "confidence": signal.confidence,
+            },
+        )
+
+    def evaluate_multi_leg_strategy(self, trades: list[ClassifiedTrade]) -> Alert:
+        """Generate one consolidated Alert for a completed multi-leg strategy.
+
+        Level is determined by strategy_net_premium:
+            >= unusual_premium_threshold → HIGH
+            >= 5 × min_premium          → MEDIUM
+            else                        → LOW
+
+        Args:
+            trades: All detected legs (from MultiLegBuffer.flush_completed()).
+
+        Returns:
+            Alert describing the full strategy.
+
+        Raises:
+            ValueError: If trades is empty.
+        """
+        if not trades:
+            raise ValueError("evaluate_multi_leg_strategy requires at least one trade")
+
+        lead          = max(trades, key=lambda t: t.timestamp)
+        strategy_type = lead.multi_leg_strategy or MultiLegStrategy.COMBO
+        net_prem      = lead.strategy_net_premium or sum(t.premium or 0.0 for t in trades)
+        n_legs        = lead.window_ticks
+
+        if net_prem >= self._settings.unusual_premium_threshold:
+            level = AlertLevel.HIGH
+        elif net_prem >= self._settings.min_premium * 5:
+            level = AlertLevel.MEDIUM
+        else:
+            level = AlertLevel.LOW
+
+        strategy_label = strategy_type.value.replace("_", " ").title()
+        title = f"{lead.symbol} {strategy_label.upper()} {level.value.upper()}"
+
+        sorted_legs = sorted(trades, key=lambda t: t.strike)
+        strikes_str = "  ".join(f"${t.strike:.0f}{t.right}" for t in sorted_legs)
+        body_lines = [
+            f"Strategy: {strategy_label} ({n_legs} legs)",
+            f"Net premium: {_fmt_premium(net_prem)}",
+            f"Legs: {strikes_str}",
+            f"Expiry: {lead.expiry}",
+            f"Underlying: {_fmt_premium(lead.underlying_price)}",
+        ]
+
+        logger.debug(
+            "evaluate_multi_leg_strategy: {} {} {} legs net={}",
+            lead.symbol, strategy_type.value, n_legs, _fmt_premium(net_prem),
+        )
+
+        return Alert(
+            symbol=lead.symbol,
+            level=level,
+            title=title,
+            body="\n".join(body_lines),
+            source="multi_leg",
+            emitted_at=datetime.now(timezone.utc),
+            metadata={
+                "symbol":        lead.symbol,
+                "strategy_type": strategy_type.value,
+                "n_legs":        n_legs,
+                "net_premium":   net_prem,
+                "expiry":        lead.expiry,
             },
         )

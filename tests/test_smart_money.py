@@ -548,3 +548,119 @@ def test_pre_earnings_signal_carries_days_to_earnings():
     sig = det.score(trade)
     assert sig is not None
     assert sig.days_to_earnings == 4
+
+
+# ---------------------------------------------------------------------------
+# MULTI_LEG_STRATEGY reason tests
+# ---------------------------------------------------------------------------
+
+def test_multi_leg_strategy_fires_for_multi_leg_trade():
+    """trade_type == MULTI_LEG → MULTI_LEG_STRATEGY reason fires."""
+    from src.analysis.smart_money import SmartMoneyReason
+    from src.analysis.flow_classifier import TradeType
+    det = _make_detector(smart_money_min_confidence=0.30)
+    trade = _make_trade(trade_type_str="block")
+    trade = trade.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.MULTI_LEG_STRATEGY in sig.reasons
+
+
+def test_multi_leg_strategy_does_not_fire_for_other_types():
+    """MULTI_LEG_STRATEGY does not fire for BLOCK, SWEEP, UNKNOWN."""
+    from src.analysis.smart_money import SmartMoneyReason
+    det = _make_detector(
+        smart_money_min_confidence=0.0,
+        otm_premium_threshold=9_999_999.0,
+        unusual_premium_threshold=9_999_999.0,
+        unusual_volume_multiplier=999.0,
+    )
+    for type_str in ("block", "sweep", "unknown"):
+        trade = _make_trade(
+            trade_type_str=type_str,
+            aggressor_str="neutral",
+            moneyness_str="itm",
+            premium=50.0,
+        )
+        sig = det.score(trade)
+        if sig is not None:
+            assert SmartMoneyReason.MULTI_LEG_STRATEGY not in sig.reasons
+
+
+def test_multi_leg_strategy_sole_reason_confidence():
+    """Confidence == 0.35 when MULTI_LEG_STRATEGY is the only reason."""
+    from src.analysis.smart_money import SmartMoneyReason
+    from src.analysis.flow_classifier import TradeType
+    det = _make_detector(
+        smart_money_min_confidence=0.0,
+        otm_premium_threshold=9_999_999.0,
+        unusual_premium_threshold=9_999_999.0,
+        unusual_volume_multiplier=999.0,
+    )
+    # days_to_expiry=100 ensures NEAR_EXPIRY_OTM won't fire (default near_expiry_days=7)
+    trade = _make_trade(
+        trade_type_str="block",
+        aggressor_str="neutral",
+        moneyness_str="itm",
+        premium=50.0,
+        days_to_expiry=100,
+        volume_delta=1,
+    )
+    trade = trade.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    sig = det.score(trade)
+    assert sig is not None
+    assert sig.reasons == [SmartMoneyReason.MULTI_LEG_STRATEGY]
+    assert sig.confidence == pytest.approx(0.35)
+
+
+def test_multi_leg_strategy_priority_below_big_otm_bet():
+    """BIG_OTM_BET beats MULTI_LEG_STRATEGY as top_reason when both fire."""
+    from src.analysis.smart_money import SmartMoneyReason
+    from src.analysis.flow_classifier import TradeType
+    det = _make_detector(otm_premium_threshold=100.0)
+    trade = _make_trade(
+        trade_type_str="block",
+        aggressor_str="buy",
+        moneyness_str="otm",
+        premium=200.0,
+    )
+    trade = trade.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.BIG_OTM_BET in sig.reasons
+    assert SmartMoneyReason.MULTI_LEG_STRATEGY in sig.reasons
+    assert sig.top_reason == SmartMoneyReason.BIG_OTM_BET
+
+
+def test_multi_leg_strategy_priority_above_pre_earnings():
+    """MULTI_LEG_STRATEGY beats PRE_EARNINGS as top_reason when both fire."""
+    from src.analysis.smart_money import SmartMoneyReason
+    from src.analysis.flow_classifier import TradeType
+    det = _make_detector(
+        pre_earnings_days=5,
+        otm_premium_threshold=9_999_999.0,
+        unusual_premium_threshold=9_999_999.0,
+        unusual_volume_multiplier=999.0,
+        smart_money_min_confidence=0.0,
+    )
+    trade = _make_trade(
+        trade_type_str="block",
+        aggressor_str="neutral",
+        moneyness_str="itm",
+        premium=50.0,
+    )
+    trade = trade.model_copy(update={
+        "trade_type": TradeType.MULTI_LEG,
+        "days_to_earnings": 2,
+    })
+    sig = det.score(trade)
+    assert sig is not None
+    assert SmartMoneyReason.MULTI_LEG_STRATEGY in sig.reasons
+    assert SmartMoneyReason.PRE_EARNINGS in sig.reasons
+    assert sig.top_reason == SmartMoneyReason.MULTI_LEG_STRATEGY
+
+
+def test_multi_leg_strategy_enum_value():
+    """SmartMoneyReason.MULTI_LEG_STRATEGY.value == 'multi_leg_strategy'."""
+    from src.analysis.smart_money import SmartMoneyReason
+    assert SmartMoneyReason.MULTI_LEG_STRATEGY.value == "multi_leg_strategy"

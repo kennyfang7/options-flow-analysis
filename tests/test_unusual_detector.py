@@ -208,10 +208,15 @@ async def test_detect_returns_none_when_no_conditions_fire(detector):
 
 
 @pytest.mark.asyncio
-async def test_detect_returns_none_for_multi_leg(detector):
-    """MULTI_LEG trades are skipped — detection semantics undefined."""
-    trade = make_trade(trade_type=TradeType.MULTI_LEG)
-    assert await detector.detect(trade) is None
+async def test_unusual_detector_processes_multi_leg_trade(detector):
+    """MULTI_LEG trades now flow through detect() and can fire conditions."""
+    tick = make_tick(last_size=100, volume=100, open_interest=100,
+                     bid=5.00, ask=5.50, last=5.45, delta=0.25)
+    trade = make_trade(tick=tick, trade_type=TradeType.MULTI_LEG,
+                       premium=600.0, volume_delta=100, signal_strength=1.0)
+    signal = await detector.detect(trade)
+    assert signal is not None
+    assert UnusualReason.PREMIUM_SIZE in signal.reasons
 
 
 @pytest.mark.asyncio

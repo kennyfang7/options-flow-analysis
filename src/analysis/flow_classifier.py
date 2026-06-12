@@ -26,7 +26,7 @@ class TradeType(str, Enum):
     SWEEP = "sweep"
     SPLIT = "split"
     BLOCK = "block"
-    MULTI_LEG = "multi_leg"  # placeholder — detection not implemented
+    MULTI_LEG = "multi_leg"  # two+ distinct contracts on same underlying within multi_leg_window_seconds
     UNKNOWN = "unknown"
 
 
@@ -36,6 +36,18 @@ class Aggressor(str, Enum):
     BUY = "buy"
     SELL = "sell"
     NEUTRAL = "neutral"
+
+
+class MultiLegStrategy(str, Enum):
+    """Named strategy type for a MULTI_LEG classified trade."""
+
+    STRADDLE        = "straddle"         # same strike + expiry, call + put
+    STRANGLE        = "strangle"         # same expiry, different strikes, call + put
+    VERTICAL_SPREAD = "vertical_spread"  # same expiry + right, different strikes
+    CALENDAR_SPREAD = "calendar_spread"  # same strike + right, different expiries
+    DIAGONAL_SPREAD = "diagonal_spread"  # different strike AND expiry, same right
+    IRON_CONDOR     = "iron_condor"      # 4 legs: 2 calls + 2 puts, same expiry
+    COMBO           = "combo"            # multi-leg but pattern not recognised
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +106,9 @@ class ClassifiedTrade(BaseModel):
     signal_strength: float | None
     volume_delta: int
     window_ticks: int
+    multi_leg_strategy: MultiLegStrategy | None = None
+    strategy_net_premium: float | None = None  # cumulative premium across all legs in window
+    strategy_group: str | None = None          # unique per strategy instance; shared by all its legs
     timestamp: datetime
     tick: TickUpdate = Field(exclude=True)
 
@@ -146,6 +161,47 @@ def _sizes_within_tolerance(
     return all(abs(s - median) / median <= tol for s in sizes)
 
 
+def _classify_multi_leg_strategy(legs: list[tuple[str, float, str]]) -> MultiLegStrategy:
+    """Classify a list of (right, strike, expiry) tuples into a named strategy.
+
+    Args:
+        legs: List of (right, strike, expiry) tuples for each leg.
+
+    Returns:
+        The best-matching MultiLegStrategy enum value.
+    """
+    n = len(legs)
+    if n < 2:
+        return MultiLegStrategy.COMBO
+
+    rights   = {r for r, _, _ in legs}
+    strikes  = {s for _, s, _ in legs}
+    expiries = {e for _, _, e in legs}
+    has_calls = "C" in rights
+    has_puts  = "P" in rights
+
+    if n == 2:
+        if has_calls and has_puts:
+            if len(expiries) == 1:
+                return (MultiLegStrategy.STRADDLE if len(strikes) == 1
+                        else MultiLegStrategy.STRANGLE)
+            return MultiLegStrategy.COMBO
+        # same right
+        if len(expiries) == 1:
+            return MultiLegStrategy.VERTICAL_SPREAD
+        if len(strikes) == 1:
+            return MultiLegStrategy.CALENDAR_SPREAD
+        return MultiLegStrategy.DIAGONAL_SPREAD
+
+    if n == 4 and has_calls and has_puts and len(expiries) == 1:
+        calls = sum(1 for r, _, _ in legs if r == "C")
+        puts  = sum(1 for r, _, _ in legs if r == "P")
+        if calls == 2 and puts == 2:
+            return MultiLegStrategy.IRON_CONDOR
+
+    return MultiLegStrategy.COMBO
+
+
 # ---------------------------------------------------------------------------
 # FlowClassifier
 # ---------------------------------------------------------------------------
@@ -173,6 +229,8 @@ class FlowClassifier:
         self._settings = settings
         self._windows: dict[int, deque[tuple[TickUpdate, Aggressor]]] = {}
         self._last_volume: dict[int, int] = {}
+        # Cross-contract correlation: symbol → deque of (con_id, timestamp, premium)
+        self._symbol_recent: dict[str, deque[tuple[int, datetime, float]]] = {}
 
     def classify(self, tick: TickUpdate) -> ClassifiedTrade | None:
         """Classify a TickUpdate as a trade event.
@@ -288,6 +346,32 @@ class FlowClassifier:
                 trade_type = TradeType.UNKNOWN
                 window_ticks = 1
 
+        # 6.5  Cross-contract multi-leg check
+        if tick.symbol not in self._symbol_recent:
+            self._symbol_recent[tick.symbol] = deque()
+        sym_win = self._symbol_recent[tick.symbol]
+        sym_win.append((con_id, now, premium))
+        ml_cutoff = now - timedelta(seconds=s.multi_leg_window_seconds)
+        while sym_win and sym_win[0][1] < ml_cutoff:
+            sym_win.popleft()
+        prior_con_ids = {cid for cid, _, _ in sym_win if cid != con_id}
+        if prior_con_ids:
+            trade_type   = TradeType.MULTI_LEG
+            window_ticks = 1 + len(prior_con_ids)
+            # Strategy type: look up contract details from per-contract windows
+            legs: list[tuple[str, float, str]] = [(tick.right, tick.strike, tick.expiry)]
+            for cid in prior_con_ids:
+                if cid in self._windows and self._windows[cid]:
+                    t = self._windows[cid][-1][0]
+                    legs.append((t.right, t.strike, t.expiry))
+            ml_strategy     = _classify_multi_leg_strategy(legs)
+            ml_net_premium  = sum(p for _, _, p in sym_win)  # all legs in window
+            ml_group        = f"{tick.symbol}:{sym_win[0][1].isoformat()}"
+        else:
+            ml_strategy    = None
+            ml_net_premium = None
+            ml_group       = None
+
         # 7. Signal strength
         if tick.open_interest is None:
             signal_strength: float | None = None
@@ -313,6 +397,9 @@ class FlowClassifier:
             signal_strength=signal_strength,
             volume_delta=volume_delta,
             window_ticks=window_ticks,
+            multi_leg_strategy=ml_strategy,
+            strategy_net_premium=ml_net_premium,
+            strategy_group=ml_group,
             timestamp=tick.timestamp,
             tick=tick,
         )
@@ -336,17 +423,18 @@ class FlowClassifier:
         for con_id in stale:
             del self._windows[con_id]
             self._last_volume.pop(con_id, None)
-        if stale:
-            logger.info("purge_stale: evicted {} stale contracts", len(stale))
+        stale_symbols = [
+            sym for sym, w in self._symbol_recent.items()
+            if not w or w[-1][1] < cutoff
+        ]
+        for sym in stale_symbols:
+            del self._symbol_recent[sym]
+        if stale or stale_symbols:
+            logger.info(
+                "purge_stale: evicted {} stale contracts, {} stale symbol windows",
+                len(stale), len(stale_symbols),
+            )
         return len(stale)
-
-    # Multi-leg hook (future implementation)
-    # def _check_cross_contract(self, tick: TickUpdate) -> bool:
-    #     """Detect multi-leg trades by correlating prints across contracts.
-    #     Requires cross-contract window keyed by (symbol, timestamp_bucket).
-    #     Not implemented — deferred. Placeholder TradeType.MULTI_LEG exists.
-    #     """
-    #     raise NotImplementedError
 
 
 if __name__ == "__main__":

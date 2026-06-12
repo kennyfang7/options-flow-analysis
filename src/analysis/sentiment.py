@@ -7,7 +7,7 @@ from config.settings import Settings
 from loguru import logger
 from pydantic import BaseModel
 
-from src.analysis.flow_classifier import Aggressor
+from src.analysis.flow_classifier import Aggressor, TradeType
 from src.analysis.greeks_engine import EnrichedTrade, Moneyness
 
 
@@ -240,7 +240,8 @@ class SentimentAggregator:
         delta_contributions: list[float] = []
         gamma_contributions: list[float] = []
         for t in window:
-            sign = _AGGRESSOR_SIGN[t.aggressor]
+            sign = (0.0 if t.trade_type == TradeType.MULTI_LEG
+                    else _AGGRESSOR_SIGN[t.aggressor])
             if sign == 0.0:
                 continue
             if t.delta is not None:
@@ -260,13 +261,19 @@ class SentimentAggregator:
         # even when net_premium is non-zero — see class docstring).
         bullish_premium = sum(
             (t.premium if t.premium is not None else 0.0) for t in window
-            if (t.right == "C" and t.aggressor == Aggressor.BUY)
-            or (t.right == "P" and t.aggressor == Aggressor.SELL)
+            if t.trade_type != TradeType.MULTI_LEG
+            and (
+                (t.right == "C" and t.aggressor == Aggressor.BUY)
+                or (t.right == "P" and t.aggressor == Aggressor.SELL)
+            )
         )
         bearish_premium = sum(
             (t.premium if t.premium is not None else 0.0) for t in window
-            if (t.right == "P" and t.aggressor == Aggressor.BUY)
-            or (t.right == "C" and t.aggressor == Aggressor.SELL)
+            if t.trade_type != TradeType.MULTI_LEG
+            and (
+                (t.right == "P" and t.aggressor == Aggressor.BUY)
+                or (t.right == "C" and t.aggressor == Aggressor.SELL)
+            )
         )
         total_directional = bullish_premium + bearish_premium
         directional_bias = (

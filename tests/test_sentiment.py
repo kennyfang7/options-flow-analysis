@@ -408,3 +408,47 @@ def test_purge_stale_returns_zero_when_nothing_stale():
 def test_purge_stale_empty_aggregator():
     agg = make_aggregator()
     assert agg.purge_stale() == 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-leg exclusion from directional metrics (ext 2)
+# ---------------------------------------------------------------------------
+
+def test_multi_leg_excluded_from_directional_bias():
+    """MULTI_LEG call + put BUY trades → directional_bias remains None."""
+    from src.analysis.flow_classifier import TradeType
+    agg = make_aggregator()
+    call_trade = make_trade(right="C", aggressor_str="buy", premium=50_000.0)
+    ml_call = call_trade.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    put_trade = make_trade(right="P", aggressor_str="buy", premium=50_000.0)
+    ml_put = put_trade.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    agg.update(ml_call)
+    agg.update(ml_put)
+    snap = agg.snapshot("SPY")
+    assert snap is not None
+    assert snap.directional_bias is None
+
+
+def test_multi_leg_excluded_from_delta_exposure():
+    """MULTI_LEG trade with non-None delta → net_delta_exposure remains None."""
+    from src.analysis.flow_classifier import TradeType
+    agg = make_aggregator()
+    base = make_trade(right="C", aggressor_str="buy", delta=0.5, premium=10_000.0)
+    ml = base.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    agg.update(ml)
+    snap = agg.snapshot("SPY")
+    assert snap is not None
+    assert snap.net_delta_exposure is None
+
+
+def test_multi_leg_still_counted_in_call_put_volume():
+    """MULTI_LEG call is still counted in call_count and call_volume."""
+    from src.analysis.flow_classifier import TradeType
+    agg = make_aggregator()
+    base = make_trade(right="C", aggressor_str="buy", volume_delta=200, premium=20_000.0)
+    ml = base.model_copy(update={"trade_type": TradeType.MULTI_LEG})
+    agg.update(ml)
+    snap = agg.snapshot("SPY")
+    assert snap is not None
+    assert snap.call_count == 1
+    assert snap.call_volume == 200

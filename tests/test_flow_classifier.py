@@ -362,3 +362,204 @@ def test_purge_stale_removes_old_entries(classifier):
 def test_purge_stale_returns_zero_when_nothing_stale(classifier):
     classifier.classify(make_tick(volume=50, last_size=50))
     assert classifier.purge_stale(max_age_seconds=86400.0) == 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-leg detection tests
+# ---------------------------------------------------------------------------
+
+def test_multi_leg_detected_on_second_distinct_con_id(classifier):
+    """Second distinct con_id on same symbol within window → MULTI_LEG, window_ticks == 2."""
+    base = datetime.now(timezone.utc)
+    # First leg — separate contract
+    r1 = classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    assert r1 is None or r1.trade_type != TradeType.MULTI_LEG
+
+    # Second leg — different con_id, same symbol, 0.3s later (within 1s window)
+    r2 = classifier.classify(make_tick(con_id=22222, symbol="SPY",
+                                       timestamp=base + timedelta(seconds=0.3),
+                                       volume=50, last_size=50))
+    assert r2 is not None
+    assert r2.trade_type == TradeType.MULTI_LEG
+    assert r2.window_ticks == 2
+
+
+def test_multi_leg_window_ticks_three_legs(classifier):
+    """Three distinct con_ids within window → window_ticks == 3 on third leg."""
+    base = datetime.now(timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    classifier.classify(make_tick(con_id=22222, symbol="SPY",
+                                  timestamp=base + timedelta(seconds=0.2),
+                                  volume=50, last_size=50))
+    r3 = classifier.classify(make_tick(con_id=33333, symbol="SPY",
+                                       timestamp=base + timedelta(seconds=0.4),
+                                       volume=50, last_size=50))
+    assert r3 is not None
+    assert r3.trade_type == TradeType.MULTI_LEG
+    assert r3.window_ticks == 3
+
+
+def test_multi_leg_not_detected_when_window_expired():
+    """Second tick arrives after window expires → NOT MULTI_LEG."""
+    s = Settings(
+        min_premium=100.0,
+        unusual_premium_threshold=250_000.0,
+        multi_leg_window_seconds=0.5,
+    )
+    from src.analysis.flow_classifier import FlowClassifier
+    classifier = FlowClassifier(s)
+    base = datetime.now(timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    r2 = classifier.classify(make_tick(con_id=22222, symbol="SPY",
+                                       timestamp=base + timedelta(seconds=2.0),
+                                       volume=50, last_size=50))
+    assert r2 is None or r2.trade_type != TradeType.MULTI_LEG
+
+
+def test_multi_leg_not_detected_for_same_con_id(classifier):
+    """Same con_id repeated within window → NOT MULTI_LEG."""
+    base = datetime.now(timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    r2 = classifier.classify(make_tick(con_id=11111, symbol="SPY",
+                                       timestamp=base + timedelta(seconds=0.3),
+                                       volume=100, last_size=50))
+    assert r2 is None or r2.trade_type != TradeType.MULTI_LEG
+
+
+def test_multi_leg_symbol_isolation(classifier):
+    """SPY tick does not mark an AAPL tick as MULTI_LEG."""
+    base = datetime.now(timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    r_aapl = classifier.classify(make_tick(con_id=22222, symbol="AAPL",
+                                           timestamp=base + timedelta(seconds=0.3),
+                                           volume=50, last_size=50))
+    assert r_aapl is None or r_aapl.trade_type != TradeType.MULTI_LEG
+
+
+def test_purge_stale_evicts_symbol_recent():
+    """purge_stale evicts stale _symbol_recent entries."""
+    from src.analysis.flow_classifier import FlowClassifier
+    s = Settings(min_premium=100.0, unusual_premium_threshold=250_000.0)
+    classifier = FlowClassifier(s)
+    old_ts = datetime(2020, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=old_ts, volume=50, last_size=50))
+    assert "SPY" in classifier._symbol_recent
+    classifier.purge_stale(max_age_seconds=1.0)
+    assert "SPY" not in classifier._symbol_recent
+
+
+# ---------------------------------------------------------------------------
+# Multi-leg strategy type + net premium + strategy group (ext 1 + 3)
+# ---------------------------------------------------------------------------
+
+from src.analysis.flow_classifier import MultiLegStrategy, _classify_multi_leg_strategy
+
+
+def test_classify_multi_leg_strategy_straddle():
+    """Same strike + expiry, call + put → STRADDLE."""
+    legs = [("C", 500.0, "20260320"), ("P", 500.0, "20260320")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.STRADDLE
+
+
+def test_classify_multi_leg_strategy_strangle():
+    """Same expiry, different strikes, call + put → STRANGLE."""
+    legs = [("C", 510.0, "20260320"), ("P", 490.0, "20260320")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.STRANGLE
+
+
+def test_classify_multi_leg_strategy_vertical_spread():
+    """Same expiry + right, different strikes → VERTICAL_SPREAD."""
+    legs = [("C", 500.0, "20260320"), ("C", 510.0, "20260320")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.VERTICAL_SPREAD
+
+
+def test_classify_multi_leg_strategy_calendar_spread():
+    """Same strike + right, different expiries → CALENDAR_SPREAD."""
+    legs = [("C", 500.0, "20260320"), ("C", 500.0, "20260620")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.CALENDAR_SPREAD
+
+
+def test_classify_multi_leg_strategy_diagonal_spread():
+    """Different strike AND different expiry, same right → DIAGONAL_SPREAD."""
+    legs = [("C", 500.0, "20260320"), ("C", 510.0, "20260620")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.DIAGONAL_SPREAD
+
+
+def test_classify_multi_leg_strategy_iron_condor():
+    """4 legs: 2C + 2P, same expiry → IRON_CONDOR."""
+    legs = [
+        ("C", 510.0, "20260320"),
+        ("C", 520.0, "20260320"),
+        ("P", 490.0, "20260320"),
+        ("P", 480.0, "20260320"),
+    ]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.IRON_CONDOR
+
+
+def test_classify_multi_leg_strategy_combo_fallback():
+    """3 mixed legs (not a recognized pattern) → COMBO."""
+    legs = [("C", 500.0, "20260320"), ("P", 490.0, "20260320"), ("C", 510.0, "20260320")]
+    assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.COMBO
+
+
+def test_strategy_net_premium_accumulates_across_legs():
+    """strategy_net_premium on the second leg equals sum of both legs' premiums."""
+    from src.analysis.flow_classifier import FlowClassifier
+    s = Settings(
+        min_premium=100.0,
+        unusual_premium_threshold=250_000.0,
+        multi_leg_window_seconds=2.0,
+    )
+    classifier = FlowClassifier(s)
+    base = datetime.now(timezone.utc)
+    # leg 1: premium = 50 * 2.45 * 100 = 12,250
+    classifier.classify(make_tick(
+        con_id=11111, symbol="SPY", timestamp=base,
+        volume=50, last_size=50, bid=2.00, ask=2.50, last=2.45,
+        right="C", strike=500.0, expiry="20260320",
+    ))
+    # leg 2: premium = 50 * 2.45 * 100 = 12,250
+    r2 = classifier.classify(make_tick(
+        con_id=22222, symbol="SPY",
+        timestamp=base + timedelta(seconds=0.3),
+        volume=50, last_size=50, bid=2.00, ask=2.50, last=2.45,
+        right="P", strike=500.0, expiry="20260320",
+    ))
+    assert r2 is not None
+    assert r2.trade_type == TradeType.MULTI_LEG
+    assert r2.strategy_net_premium is not None
+    # Both legs in sym_win: 12,250 + 12,250 = 24,500
+    assert r2.strategy_net_premium == pytest.approx(24_500.0)
+
+
+def test_strategy_group_consistent_within_window():
+    """Legs within the same multi-leg window share the same strategy_group."""
+    from src.analysis.flow_classifier import FlowClassifier
+    s = Settings(
+        min_premium=100.0,
+        unusual_premium_threshold=250_000.0,
+        multi_leg_window_seconds=2.0,
+    )
+    classifier = FlowClassifier(s)
+    base = datetime.now(timezone.utc)
+    classifier.classify(make_tick(con_id=11111, symbol="SPY", timestamp=base, volume=50, last_size=50))
+    r2 = classifier.classify(make_tick(
+        con_id=22222, symbol="SPY",
+        timestamp=base + timedelta(seconds=0.3),
+        volume=50, last_size=50,
+    ))
+    assert r2 is not None
+    assert r2.trade_type == TradeType.MULTI_LEG
+    assert r2.strategy_group is not None
+    assert r2.strategy_group.startswith("SPY:")
+
+
+def test_non_multi_leg_has_none_strategy_fields(classifier):
+    """A single-contract trade (no prior legs) has None for all strategy fields."""
+    tick = make_tick(last_size=600, volume=600)  # large enough for BLOCK
+    result = classifier.classify(tick)
+    assert result is not None
+    assert result.trade_type != TradeType.MULTI_LEG
+    assert result.multi_leg_strategy is None
+    assert result.strategy_net_premium is None
+    assert result.strategy_group is None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -454,3 +454,129 @@ async def test_notifier_skips_email_when_empty():
         )
         await notifier.send(alert)
         mock_post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MultiLegBuffer + evaluate_multi_leg_strategy (ext 4)
+# ---------------------------------------------------------------------------
+
+def test_multi_leg_buffer_ignores_non_multi_leg():
+    """BLOCK trade → buffer stays empty."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    trade = _make_classified_trade(trade_type=TradeType.BLOCK)
+    buffer.add(trade)
+    assert buffer._groups == {}
+
+
+def test_multi_leg_buffer_ignores_trade_without_strategy_group():
+    """MULTI_LEG trade with strategy_group=None → ignored."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    trade = _make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=None)
+    buffer.add(trade)
+    assert buffer._groups == {}
+
+
+def test_multi_leg_buffer_accumulates_legs_in_same_group():
+    """Two legs with same strategy_group → both buffered under that key."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    group = "SPY:2026-06-12T10:00:00+00:00"
+    trade1 = _make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=group)
+    trade2 = _make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=group, con_id=22222)
+    buffer.add(trade1)
+    buffer.add(trade2)
+    assert len(buffer._groups[group]) == 2
+
+
+def test_multi_leg_buffer_separate_groups_tracked_independently():
+    """Different strategy_groups → both tracked independently."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    g1 = "SPY:2026-06-12T10:00:00+00:00"
+    g2 = "SPY:2026-06-12T10:01:00+00:00"
+    buffer.add(_make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=g1))
+    buffer.add(_make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=g2))
+    assert g1 in buffer._groups
+    assert g2 in buffer._groups
+
+
+def test_multi_leg_buffer_flush_returns_completed_groups():
+    """Groups with old timestamps are returned and removed from the buffer."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    old_ts = datetime(2020, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    group = "SPY:old"
+    trade = _make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=group, timestamp=old_ts)
+    buffer.add(trade)
+    cutoff = datetime.now(timezone.utc)
+    flushed = buffer.flush_completed(cutoff)
+    assert len(flushed) == 1
+    assert flushed[0][0].strategy_group == group
+    assert group not in buffer._groups
+
+
+def test_multi_leg_buffer_does_not_flush_recent_groups():
+    """Groups with fresh timestamps are NOT returned by flush_completed."""
+    from src.alerts.rules import MultiLegBuffer
+    from src.analysis.flow_classifier import TradeType
+    buffer = MultiLegBuffer(window_seconds=2.0)
+    group = "SPY:fresh"
+    trade = _make_classified_trade(trade_type=TradeType.MULTI_LEG, strategy_group=group)
+    buffer.add(trade)
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
+    flushed = buffer.flush_completed(cutoff)
+    assert len(flushed) == 0
+    assert group in buffer._groups
+
+
+def test_evaluate_multi_leg_strategy_raises_on_empty_list():
+    """Empty trades list → ValueError."""
+    from src.alerts.rules import AlertRules
+    from config.settings import Settings
+    rules = AlertRules(Settings(min_premium=100.0))
+    with pytest.raises(ValueError, match="at least one trade"):
+        rules.evaluate_multi_leg_strategy([])
+
+
+def test_evaluate_multi_leg_strategy_returns_alert():
+    """Valid trades list → Alert with source='multi_leg' and strategy in title."""
+    from src.alerts.rules import AlertRules
+    from src.analysis.flow_classifier import TradeType, MultiLegStrategy
+    from config.settings import Settings
+    rules = AlertRules(Settings(min_premium=100.0))
+    trade = _make_classified_trade(
+        trade_type=TradeType.MULTI_LEG,
+        strategy_group="SPY:test",
+        multi_leg_strategy=MultiLegStrategy.STRADDLE,
+        strategy_net_premium=50_000.0,
+        window_ticks=2,
+    )
+    alert = rules.evaluate_multi_leg_strategy([trade])
+    assert alert.source == "multi_leg"
+    assert alert.symbol == "SPY"
+    assert "STRADDLE" in alert.title
+
+
+def test_evaluate_multi_leg_strategy_level_high_when_premium_large():
+    """strategy_net_premium >= unusual_premium_threshold → AlertLevel.HIGH."""
+    from src.alerts.rules import AlertRules, AlertLevel
+    from src.analysis.flow_classifier import TradeType, MultiLegStrategy
+    from config.settings import Settings
+    settings = Settings(min_premium=100.0, unusual_premium_threshold=50_000.0)
+    rules = AlertRules(settings)
+    trade = _make_classified_trade(
+        trade_type=TradeType.MULTI_LEG,
+        strategy_group="SPY:test",
+        multi_leg_strategy=MultiLegStrategy.IRON_CONDOR,
+        strategy_net_premium=100_000.0,
+        window_ticks=4,
+    )
+    alert = rules.evaluate_multi_leg_strategy([trade])
+    assert alert.level == AlertLevel.HIGH

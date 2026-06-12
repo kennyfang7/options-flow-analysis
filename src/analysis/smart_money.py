@@ -47,23 +47,28 @@ class SmartMoneyReason(str, Enum):
     # TradeType.BLOCK + premium >= unusual_premium_threshold.
     # Catches: single very large block — concentrated institutional capital.
 
+    MULTI_LEG_STRATEGY = "multi_leg_strategy"
+    # trade_type == TradeType.MULTI_LEG — a leg of a detected spread/combo order.
+
 
 # ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
 
 _CONFIDENCE_WEIGHTS: dict[SmartMoneyReason, float] = {
-    SmartMoneyReason.SWEEP_AGGRESSOR: 0.40,
-    SmartMoneyReason.BIG_OTM_BET:     0.45,
-    SmartMoneyReason.PRE_EARNINGS:    0.30,
-    SmartMoneyReason.NEAR_EXPIRY_OTM: 0.35,
-    SmartMoneyReason.UNUSUAL_VOLUME:  0.35,
-    SmartMoneyReason.LARGE_BLOCK:     0.30,
+    SmartMoneyReason.SWEEP_AGGRESSOR:    0.40,
+    SmartMoneyReason.BIG_OTM_BET:        0.45,
+    SmartMoneyReason.PRE_EARNINGS:       0.30,
+    SmartMoneyReason.NEAR_EXPIRY_OTM:    0.35,
+    SmartMoneyReason.UNUSUAL_VOLUME:     0.35,
+    SmartMoneyReason.LARGE_BLOCK:        0.30,
+    SmartMoneyReason.MULTI_LEG_STRATEGY: 0.35,
 }
 
 _PRIORITY: list[SmartMoneyReason] = [
     SmartMoneyReason.SWEEP_AGGRESSOR,
     SmartMoneyReason.BIG_OTM_BET,
+    SmartMoneyReason.MULTI_LEG_STRATEGY,
     SmartMoneyReason.PRE_EARNINGS,
     SmartMoneyReason.NEAR_EXPIRY_OTM,
     SmartMoneyReason.UNUSUAL_VOLUME,
@@ -229,6 +234,10 @@ class SmartMoneyDetector:
             and trade.premium >= s.unusual_premium_threshold
         ):
             reasons.append(SmartMoneyReason.LARGE_BLOCK)
+
+        # 7. MULTI_LEG_STRATEGY — leg of a detected spread/combo order
+        if trade.trade_type == TradeType.MULTI_LEG:
+            reasons.append(SmartMoneyReason.MULTI_LEG_STRATEGY)
 
         if not reasons:
             return None
