@@ -16,6 +16,26 @@ from src.data.tick_stream import TickUpdate
 from src.storage.models import ChainSnapshot, ClassifiedTradeRecord, OptionContractRecord, OptionTick, UnusualSignalRecord
 
 
+def _to_naive_utc(dt: datetime) -> datetime:
+    """Normalize a datetime to naive UTC for SQLite storage.
+
+    SQLite serializes datetimes as ISO strings. Mixing aware ("+00:00" suffix)
+    and naive strings breaks lexicographic ORDER BY and time-window filters.
+    Always strip tzinfo after converting to UTC so all stored values are uniform.
+
+    Revisit when migrating to PostgreSQL (which has native timestamptz support).
+
+    Args:
+        dt: Datetime to normalize. May be aware or naive.
+
+    Returns:
+        Naive UTC datetime (tzinfo=None).
+    """
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 async def insert_chain_snapshot(
     session: AsyncSession, snapshot: OptionChainSnapshot
 ) -> int:
@@ -34,7 +54,7 @@ async def insert_chain_snapshot(
     db_snapshot = ChainSnapshot(
         underlying=snapshot.underlying,
         underlying_price=snapshot.underlying_price,
-        captured_at=snapshot.timestamp,  # OptionChainSnapshot.timestamp → captured_at
+        captured_at=_to_naive_utc(snapshot.timestamp),  # OptionChainSnapshot.timestamp → captured_at
     )
     session.add(db_snapshot)
     await session.flush()  # populate db_snapshot.id before inserting contracts
@@ -86,7 +106,7 @@ async def insert_tick(session: AsyncSession, tick: TickUpdate) -> int:
         expiry=tick.expiry,
         strike=tick.strike,
         right=tick.right,
-        received_at=tick.timestamp,  # TickUpdate.timestamp → received_at
+        received_at=_to_naive_utc(tick.timestamp),  # TickUpdate.timestamp → received_at
         bid=tick.bid,
         ask=tick.ask,
         last=tick.last,
@@ -283,7 +303,7 @@ async def insert_classified_trade(
         volume_delta=trade.volume_delta,
         window_ticks=trade.window_ticks,
         days_to_earnings=getattr(trade, "days_to_earnings", None),
-        classified_at=trade.timestamp,
+        classified_at=_to_naive_utc(trade.timestamp),
     )
     session.add(record)
     await session.flush()
@@ -296,8 +316,8 @@ async def insert_unusual_signal(
     """Persist an UnusualSignal emitted by UnusualDetector.
 
     reasons is stored as a JSON array string for SQLite compatibility.
-    classified_at and flagged_at are stored as naive UTC (tzinfo stripped)
-    for SQLite compatibility — revisit when migrating to PostgreSQL.
+    All datetime fields are normalized to naive UTC via _to_naive_utc() before
+    storage — revisit when migrating to PostgreSQL (which has native timestamptz).
 
     Args:
         session: Active AsyncSession (caller manages commit/rollback).
@@ -324,8 +344,8 @@ async def insert_unusual_signal(
         top_reason=signal.top_reason.value,
         reasons=json.dumps([r.value for r in signal.reasons]),
         days_to_earnings=getattr(signal.trade, "days_to_earnings", None),
-        classified_at=signal.trade.timestamp,
-        flagged_at=signal.flagged_at,
+        classified_at=_to_naive_utc(signal.trade.timestamp),
+        flagged_at=_to_naive_utc(signal.flagged_at),
     )
     session.add(record)
     await session.flush()

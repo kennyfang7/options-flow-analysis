@@ -140,7 +140,7 @@ def test_unusual_signal_constructs():
         effective_price=trade.effective_price,
         reasons=[UnusualReason.PREMIUM_SIZE],
         top_reason=UnusualReason.PREMIUM_SIZE,
-        flagged_at=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        flagged_at=datetime.now(timezone.utc),
         trade=trade,
     )
     assert signal.top_reason == UnusualReason.PREMIUM_SIZE
@@ -167,7 +167,7 @@ def test_unusual_signal_trade_excluded_from_serialization():
         effective_price=trade.effective_price,
         reasons=[UnusualReason.OI_RATIO],
         top_reason=UnusualReason.OI_RATIO,
-        flagged_at=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        flagged_at=datetime.now(timezone.utc),
         trade=trade,
     )
     dumped = signal.model_dump()
@@ -451,7 +451,7 @@ async def test_detect_flagged_at_is_set(detector):
 async def test_purge_stale_evicts_old_entries(detector):
     """purge_stale() evicts con_ids not seen within max_age_seconds."""
     old_tick = make_tick(con_id=111, open_interest=500,
-                         timestamp=datetime(2020, 1, 1, 10, 0, 0, tzinfo=timezone.utc))
+                         timestamp=datetime(2020, 1, 1, 10, 0, 0, tzinfo=timezone.utc))  # intentionally old — stale-purge test needs a past date
     trade = make_trade(
         tick=old_tick, con_id=111, premium=600.0,
         timestamp=datetime(2020, 1, 1, 10, 0, 0, tzinfo=timezone.utc),

@@ -358,7 +358,7 @@ class AlertRules:
         lead          = max(trades, key=lambda t: t.timestamp)
         strategy_type = lead.multi_leg_strategy or MultiLegStrategy.COMBO
         net_prem      = lead.strategy_net_premium or sum(t.premium or 0.0 for t in trades)
-        n_legs        = lead.window_ticks
+        n_legs        = len(trades)
 
         if net_prem >= self._settings.unusual_premium_threshold:
             level = AlertLevel.HIGH

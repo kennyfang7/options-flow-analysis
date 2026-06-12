@@ -206,8 +206,8 @@ def _make_signal_record(premium: float | None = 100_000.0) -> UnusualSignalRecor
         signal_strength=7.5,
         top_reason="premium_size",
         reasons='["premium_size"]',
-        classified_at=datetime(2026, 3, 14, 14, 30, 0),
-        flagged_at=datetime(2026, 3, 14, 14, 30, 1),
+        classified_at=datetime.now(),
+        flagged_at=datetime.now(),
     )
 
 
@@ -231,7 +231,7 @@ def _make_trade_record() -> ClassifiedTradeRecord:
         signal_strength=5.2,
         volume_delta=500,
         window_ticks=1,
-        classified_at=datetime(2026, 3, 14, 14, 30, 0),
+        classified_at=datetime.now(),
     )
 
 

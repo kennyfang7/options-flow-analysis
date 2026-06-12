@@ -9,7 +9,7 @@ def make_snapshot(**kwargs):
     defaults = dict(
         symbol="SPY",
         window_seconds=3600.0,
-        computed_at=datetime(2026, 3, 11, 14, 30, tzinfo=timezone.utc),
+        computed_at=datetime.now(timezone.utc),
         trade_count=10,
         call_volume=500,
         put_volume=300,
@@ -207,7 +207,10 @@ def test_net_premium_mixed():
 def test_trades_outside_window_excluded():
     """Only trades within the rolling window contribute to the snapshot."""
     agg = make_aggregator(window_seconds=60.0)
-    # Pin timestamps so test is deterministic regardless of CI timing
+    # Intentionally pinned anchor — this test uses _prune(symbol, anchor) which is
+    # timestamp-relative (not wall-clock), so the fixed date never causes rot.
+    # snapshot() is deliberately NOT called here; it would prune against datetime.now()
+    # and evict these past trades. See test docstring for details.
     anchor = datetime(2026, 3, 11, 14, 30, 0, tzinfo=timezone.utc)
     old = anchor - timedelta(seconds=120)   # 2 minutes before anchor → outside 60s window
     fresh = anchor                          # at anchor → inside window

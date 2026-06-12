@@ -392,7 +392,7 @@ async def test_insert_classified_trade_returns_id(async_db_session):
 
     tick = TickUpdate(
         symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
         last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.45,
     )
@@ -420,9 +420,10 @@ async def test_insert_classified_trade_persists_fields(async_db_session):
     from src.analysis.flow_classifier import ClassifiedTrade, Aggressor, TradeType
     from src.data.tick_stream import TickUpdate
 
+    ts = datetime.now(timezone.utc)
     tick = TickUpdate(
         symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc),
+        timestamp=ts,
         bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
         last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.45,
     )
@@ -448,7 +449,7 @@ async def test_insert_classified_trade_persists_fields(async_db_session):
     assert record.aggressor == "buy"
     assert record.premium == pytest.approx(147000.0)
     assert record.volume_delta == 600
-    assert record.classified_at == datetime(2026, 3, 7, 14, 30, 0)
+    assert record.classified_at == ts.replace(tzinfo=None)  # H2: stored as naive UTC
 
 
 @pytest.mark.asyncio
@@ -475,7 +476,7 @@ async def test_classified_trade_record_insert(async_db_session):
         signal_strength=3.5,
         volume_delta=600,
         window_ticks=1,
-        classified_at=datetime(2026, 3, 7, 14, 30, 0),
+        classified_at=datetime.now(),
     )
     async_db_session.add(record)
     await async_db_session.flush()
@@ -508,8 +509,8 @@ async def test_unusual_signal_record_insert(async_db_session):
         signal_strength=1.0,
         top_reason="premium_size",
         reasons=json.dumps(["premium_size"]),
-        classified_at=datetime(2026, 3, 8, 14, 30, 0),
-        flagged_at=datetime(2026, 3, 8, 14, 30, 1),
+        classified_at=datetime.now(),
+        flagged_at=datetime.now(),
     )
     async_db_session.add(record)
     await async_db_session.flush()
@@ -528,9 +529,10 @@ async def test_insert_unusual_signal_returns_id(async_db_session):
     from src.analysis.unusual_detector import UnusualReason, UnusualSignal
     from src.data.tick_stream import TickUpdate
 
+    ts = datetime.now(timezone.utc)
     tick = TickUpdate(
         symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        timestamp=ts,
         bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
         last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.20,
     )
@@ -552,7 +554,7 @@ async def test_insert_unusual_signal_returns_id(async_db_session):
         implied_vol=trade.implied_vol, effective_price=trade.effective_price,
         reasons=[UnusualReason.PREMIUM_SIZE],
         top_reason=UnusualReason.PREMIUM_SIZE,
-        flagged_at=datetime(2026, 3, 8, 14, 30, 1, tzinfo=timezone.utc),
+        flagged_at=datetime.now(timezone.utc),
         trade=trade,
     )
     signal_id = await insert_unusual_signal(async_db_session, signal)
@@ -572,9 +574,11 @@ async def test_insert_unusual_signal_persists_fields(async_db_session):
     from src.analysis.unusual_detector import UnusualReason, UnusualSignal
     from src.data.tick_stream import TickUpdate
 
+    ts = datetime.now(timezone.utc)
+    ts_flagged = ts
     tick = TickUpdate(
         symbol="SPY", con_id=12345, expiry="20260320", strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 8, 14, 30, 0, tzinfo=timezone.utc),
+        timestamp=ts,
         bid=2.00, ask=2.50, last=2.45, volume=600, open_interest=1000,
         last_size=600, underlying_price=500.0, implied_vol=0.25, delta=0.20,
     )
@@ -596,7 +600,7 @@ async def test_insert_unusual_signal_persists_fields(async_db_session):
         implied_vol=trade.implied_vol, effective_price=trade.effective_price,
         reasons=[UnusualReason.PREMIUM_SIZE, UnusualReason.OI_RATIO],
         top_reason=UnusualReason.PREMIUM_SIZE,
-        flagged_at=datetime(2026, 3, 8, 14, 30, 1, tzinfo=timezone.utc),
+        flagged_at=ts_flagged,
         trade=trade,
     )
     signal_id = await insert_unusual_signal(async_db_session, signal)
@@ -614,8 +618,8 @@ async def test_insert_unusual_signal_persists_fields(async_db_session):
     assert json.loads(record.reasons) == ["premium_size", "oi_ratio"]
     assert record.premium == pytest.approx(600.0)
     assert record.volume_delta == 60
-    assert record.classified_at == datetime(2026, 3, 8, 14, 30, 0)
-    assert record.flagged_at == datetime(2026, 3, 8, 14, 30, 1)
+    assert record.classified_at == ts.replace(tzinfo=None)    # H2: stored as naive UTC
+    assert record.flagged_at == ts_flagged.replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------

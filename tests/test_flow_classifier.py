@@ -290,7 +290,7 @@ def test_classify_unknown_small_single_print(classifier):
     assert result.trade_type == TradeType.UNKNOWN
 
 def test_classify_sweep(classifier):
-    base_time = datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc)
+    base_time = datetime.now(timezone.utc)
     result = None
     for i, offset_ms in enumerate([0, 500, 1000]):
         ts = base_time + timedelta(milliseconds=offset_ms)
@@ -301,7 +301,7 @@ def test_classify_sweep(classifier):
     assert result.window_ticks == 3
 
 def test_classify_sweep_requires_same_aggressor(classifier):
-    base_time = datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc)
+    base_time = datetime.now(timezone.utc)
     result = None
     for i, (offset_ms, last_price) in enumerate([(0, 2.45), (500, 2.05), (1000, 2.45)]):
         ts = base_time + timedelta(milliseconds=offset_ms)
@@ -311,7 +311,7 @@ def test_classify_sweep_requires_same_aggressor(classifier):
     assert result.trade_type != TradeType.SWEEP
 
 def test_classify_split(classifier):
-    base_time = datetime(2026, 3, 7, 14, 30, 0, tzinfo=timezone.utc)
+    base_time = datetime.now(timezone.utc)
     result = None
     for i, (offset_ms, last_price, size) in enumerate([(0, 2.45, 100), (3000, 2.05, 100), (4000, 2.25, 100)]):
         ts = base_time + timedelta(milliseconds=offset_ms)

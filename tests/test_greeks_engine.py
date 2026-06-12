@@ -206,7 +206,7 @@ def _make_classified_trade(**overrides):
 
     tick = TickUpdate(
         symbol="SPY", con_id=12345, expiry="20260620", strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=10.0, ask=10.50, last=10.25, volume=500, open_interest=1000,
         last_size=100, underlying_price=500.0,
         implied_vol=0.20, delta=0.52, gamma=0.01, theta=-0.05, vega=0.40,
@@ -218,7 +218,7 @@ def _make_classified_trade(**overrides):
         spread_position=0.85, effective_price=10.25, last_size=100,
         premium=102_500.0, signal_strength=6.0, volume_delta=100,
         window_ticks=1,
-        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         tick=tick,
     )
     defaults.update(overrides)
@@ -304,7 +304,7 @@ def test_enrich_computes_iv_via_bs_when_ibkr_iv_missing():
 
     tick = TickUpdate(
         symbol="SPY", con_id=99999, expiry=future_expiry, strike=100.0, right="C",
-        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=10.0, ask=11.0, last=10.45, volume=100, last_size=50,
         underlying_price=100.0, implied_vol=None, delta=None,
         gamma=None, theta=None, vega=None,
@@ -335,7 +335,7 @@ def test_enrich_iv_source_unavailable_when_no_underlying():
     future_expiry = (date.today() + timedelta(days=30)).strftime("%Y%m%d")
     tick = TickUpdate(
         symbol="SPY", con_id=11111, expiry=future_expiry, strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=None, ask=None, last=None, volume=None, last_size=50,
         underlying_price=None, implied_vol=None, delta=None,
         gamma=None, theta=None, vega=None,
@@ -409,7 +409,7 @@ def test_enrich_partial_ibkr_greeks_fills_remainder_via_bs():
     future_expiry = (date.today() + timedelta(days=90)).strftime("%Y%m%d")
     tick = TickUpdate(
         symbol="SPY", con_id=22222, expiry=future_expiry, strike=500.0, right="C",
-        timestamp=datetime(2026, 3, 10, 14, 30, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         bid=10.0, ask=11.0, last=10.50, volume=100, last_size=50,
         underlying_price=500.0,
         implied_vol=0.25, delta=0.52, gamma=None, theta=None, vega=None,

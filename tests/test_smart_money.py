@@ -38,7 +38,7 @@ def _make_trade(
         "otm": Moneyness.OTM, "unknown": Moneyness.UNKNOWN,
     }
 
-    ts = datetime(2026, 3, 11, 14, 30, tzinfo=timezone.utc)
+    ts = datetime.now(timezone.utc)
     tick = TickUpdate(
         symbol=symbol, con_id=99001, expiry="20260620", strike=520.0, right=right,
         timestamp=ts, bid=1.0, ask=1.5, last=1.45,
@@ -120,7 +120,7 @@ def test_smart_money_signal_construction():
         reasons=[SmartMoneyReason.BIG_OTM_BET],
         top_reason=SmartMoneyReason.BIG_OTM_BET,
         confidence=0.45,
-        detected_at=datetime(2026, 3, 11, 14, 30, tzinfo=timezone.utc),
+        detected_at=datetime.now(timezone.utc),
         trade=trade,
     )
     assert sig.symbol == "SPY"
@@ -143,7 +143,7 @@ def test_smart_money_signal_model_dump_excludes_trade():
         reasons=[SmartMoneyReason.BIG_OTM_BET],
         top_reason=SmartMoneyReason.BIG_OTM_BET,
         confidence=0.45,
-        detected_at=datetime(2026, 3, 11, 14, 30, tzinfo=timezone.utc),
+        detected_at=datetime.now(timezone.utc),
         trade=trade,
     )
     data = sig.model_dump()

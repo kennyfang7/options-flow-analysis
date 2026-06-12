@@ -78,7 +78,7 @@ default so existing tests construct unchanged; update tests to assert `acquire` 
 
 ## HIGH
 
-### [ ] H1. Wrong leg count in multi-leg alerts
+### [x] H1. Wrong leg count in multi-leg alerts
 **File:** `src/alerts/rules.py:361`
 
 ```python
@@ -99,7 +99,7 @@ Propagates to: alert body line 376 (`"Strategy: X (N legs)"`), debug log line 38
 
 ---
 
-### [ ] H2. Datetime tzinfo stripping promised but not done on writes
+### [x] H2. Datetime tzinfo stripping promised but not done on writes
 **File:** `src/storage/queries.py:286, 327–328` (audit `insert_tick` / `insert_chain_snapshot` too)
 
 `insert_unusual_signal`'s docstring (lines 299–300) claims "classified_at and flagged_at are
@@ -341,7 +341,7 @@ drop the log; add a public `capacity` property.
 
 ## TESTS
 
-### [ ] T1 (Medium). Hardcoded 2026 dates — will rot
+### [x] T1 (Medium). Hardcoded 2026 dates — will rot
 **Files:** `tests/test_unusual_detector.py:143, 170` · `tests/test_storage.py:136–149`
 
 Violates the project's own convention (MEMORY.md: "Test helpers MUST use
