@@ -177,7 +177,6 @@ class EarningsCalendar:
                     elif isinstance(val, datetime):
                         d = val.date()
                     else:
-                        from datetime import date as _date
                         import pandas as pd
                         d = pd.Timestamp(val).date()
                     if d >= today:

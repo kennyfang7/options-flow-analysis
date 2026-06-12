@@ -58,7 +58,7 @@ class Notifier:
                 evaluate_smart_money().
         """
         await asyncio.to_thread(self._send_discord, alert)
-        self._send_email(alert)
+        await asyncio.to_thread(self._send_email, alert)
 
     def _send_discord(self, alert: Alert) -> None:
         """POST alert as a Discord embed to the configured webhook URL.
@@ -106,9 +106,8 @@ class Notifier:
         Full SMTP implementation deferred to a future iteration.
 
         Note:
-            When implementing SMTP, wrap the blocking smtplib call in
-            ``asyncio.to_thread(self._send_email, alert)`` at the
-            ``send()`` call site to avoid blocking the event loop.
+            Called via ``asyncio.to_thread`` so any future blocking smtplib
+            call will not stall the event loop.
 
         Args:
             alert: Alert to (not yet) deliver by email.

@@ -202,14 +202,12 @@ from datetime import datetime, timezone
 def _make_classified_trade(**overrides):
     """Helper: build a minimal ClassifiedTrade for testing."""
     from src.analysis.flow_classifier import ClassifiedTrade, TradeType, Aggressor
-    from src.data.tick_stream import TickUpdate
+    from conftest import make_tick
 
-    tick = TickUpdate(
-        symbol="SPY", con_id=12345, expiry="20260620", strike=500.0, right="C",
-        timestamp=datetime.now(timezone.utc),
-        bid=10.0, ask=10.50, last=10.25, volume=500, open_interest=1000,
-        last_size=100, underlying_price=500.0,
-        implied_vol=0.20, delta=0.52, gamma=0.01, theta=-0.05, vega=0.40,
+    tick = make_tick(
+        expiry="20260620", bid=10.0, ask=10.50, last=10.25,
+        volume=500, last_size=100, implied_vol=0.20, delta=0.52,
+        gamma=0.01, theta=-0.05, vega=0.40,
     )
     defaults = dict(
         symbol="SPY", con_id=12345, expiry="20260620", right="C", strike=500.0,
@@ -218,7 +216,7 @@ def _make_classified_trade(**overrides):
         spread_position=0.85, effective_price=10.25, last_size=100,
         premium=102_500.0, signal_strength=6.0, volume_delta=100,
         window_ticks=1,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=tick.timestamp,
         tick=tick,
     )
     defaults.update(overrides)

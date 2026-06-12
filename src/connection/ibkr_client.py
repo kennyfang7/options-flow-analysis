@@ -118,7 +118,7 @@ class IBKRClient:
         self._intentional_disconnect = True
         if self._reconnect_task and not self._reconnect_task.done():
             self._reconnect_task.cancel()
-        self._ib.disconnect()
+        await asyncio.to_thread(self._ib.disconnect)
         logger.info("Disconnected from TWS/Gateway.")
 
     def register_reconnect_callback(self, callback: ReconnectCallback) -> None:

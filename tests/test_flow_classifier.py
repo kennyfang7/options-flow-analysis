@@ -53,28 +53,7 @@ from datetime import datetime, timedelta, timezone
 from src.analysis.flow_classifier import Aggressor, ClassifiedTrade, TradeType
 from src.data.tick_stream import TickUpdate
 
-
-def make_tick(**overrides) -> TickUpdate:
-    """Factory for TickUpdate with sensible defaults for unit tests."""
-    defaults = dict(
-        symbol="SPY",
-        con_id=12345,
-        expiry="20260320",
-        strike=500.0,
-        right="C",
-        timestamp=datetime.now(timezone.utc),
-        bid=2.00,
-        ask=2.50,
-        last=2.45,
-        volume=100,
-        open_interest=1000,
-        last_size=50,
-        underlying_price=500.0,
-        implied_vol=0.25,
-        delta=0.45,
-    )
-    defaults.update(overrides)
-    return TickUpdate(**defaults)
+from conftest import make_tick
 
 
 def test_classified_trade_constructs():

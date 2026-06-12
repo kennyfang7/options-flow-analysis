@@ -10,6 +10,8 @@ from src.analysis.flow_classifier import Aggressor, ClassifiedTrade, TradeType
 from src.analysis.unusual_detector import UnusualDetector, UnusualReason, UnusualSignal
 from src.data.tick_stream import TickUpdate
 
+from conftest import make_tick, make_trade
+
 
 # ---------------------------------------------------------------------------
 # Settings tests
@@ -62,58 +64,6 @@ def test_unusual_signal_threshold_must_be_positive():
     """ValidationError when unusual_signal_threshold <= 0."""
     with pytest.raises(ValidationError, match="unusual_signal_threshold must be greater than 0"):
         Settings(unusual_signal_threshold=0.0)
-
-
-def make_tick(**overrides) -> TickUpdate:
-    """Factory for TickUpdate with sensible defaults for unit tests."""
-    defaults = dict(
-        symbol="SPY",
-        con_id=12345,
-        expiry="20260320",
-        strike=500.0,
-        right="C",
-        timestamp=datetime.now(timezone.utc),
-        bid=2.00,
-        ask=2.50,
-        last=2.45,
-        volume=100,
-        open_interest=1000,
-        last_size=50,
-        underlying_price=500.0,
-        implied_vol=0.25,
-        delta=0.45,
-    )
-    defaults.update(overrides)
-    return TickUpdate(**defaults)
-
-
-def make_trade(tick: TickUpdate | None = None, **overrides) -> ClassifiedTrade:
-    """Factory for ClassifiedTrade with sensible defaults for unit tests."""
-    if tick is None:
-        tick = make_tick()
-    defaults = dict(
-        symbol=tick.symbol,
-        con_id=tick.con_id,
-        expiry=tick.expiry,
-        right=tick.right,
-        strike=tick.strike,
-        underlying_price=tick.underlying_price,
-        implied_vol=tick.implied_vol,
-        delta=tick.delta,
-        trade_type=TradeType.BLOCK,
-        aggressor=Aggressor.BUY,
-        spread_position=0.9,
-        effective_price=2.45,
-        last_size=50,
-        premium=12_250.0,   # 50 * 2.45 * 100
-        signal_strength=1.0,
-        volume_delta=50,
-        window_ticks=1,
-        timestamp=tick.timestamp,
-        tick=tick,
-    )
-    defaults.update(overrides)
-    return ClassifiedTrade(**defaults)
 
 
 # ---------------------------------------------------------------------------

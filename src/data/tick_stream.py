@@ -210,6 +210,8 @@ class TickStream:
         # Maps con_id -> Ticker returned by reqMktData (needed for cancelMktData identity)
         self._active_tickers: dict[int, Ticker] = {}
         self._event_hooked: bool = False
+        self._hook_lock: asyncio.Lock = asyncio.Lock()
+        self._dropped_ticks: int = 0
 
     @property
     def queue(self) -> asyncio.Queue[TickUpdate]:
@@ -228,6 +230,18 @@ class TickStream:
             Count of subscribed contracts.
         """
         return len(self._subscriptions)
+
+    @property
+    def dropped_ticks(self) -> int:
+        """Cumulative count of ticks dropped due to a full queue.
+
+        Incremented each time put_nowait raises QueueFull. Use this to
+        detect sustained back-pressure (consumer too slow or queue too small).
+
+        Returns:
+            Total dropped ticks since this TickStream was created.
+        """
+        return self._dropped_ticks
 
     async def subscribe(
         self,
@@ -293,10 +307,11 @@ class TickStream:
             self._active_tickers[contract.con_id] = ticker
             self._subscriptions[contract.con_id] = (ibkr_contract, underlying_price)
 
-        if not self._event_hooked and self._subscriptions:
-            self._ib.pendingTickersEvent += self._on_pending_tickers
-            self._event_hooked = True
-            logger.debug("subscribe: pendingTickersEvent hooked")
+        async with self._hook_lock:
+            if not self._event_hooked and self._subscriptions:
+                self._ib.pendingTickersEvent += self._on_pending_tickers
+                self._event_hooked = True
+                logger.debug("subscribe: pendingTickersEvent hooked")
 
         logger.info(
             "subscribe: {} active subscriptions ({} new this call)",
@@ -334,7 +349,10 @@ class TickStream:
         )
 
         if self._event_hooked and not self._subscriptions:
-            self._ib.pendingTickersEvent -= self._on_pending_tickers
+            try:
+                self._ib.pendingTickersEvent -= self._on_pending_tickers
+            except ValueError:
+                logger.warning("unsubscribe: pendingTickersEvent handler was not registered")
             self._event_hooked = False
             logger.debug("unsubscribe: pendingTickersEvent unhooked")
 
@@ -385,9 +403,10 @@ class TickStream:
             try:
                 self._queue.put_nowait(update)
             except asyncio.QueueFull:
+                self._dropped_ticks += 1
                 logger.warning(
-                    "_on_pending_tickers: queue full (maxsize={}), dropping tick for con_id={}",
-                    QUEUE_MAXSIZE, con_id,
+                    "_on_pending_tickers: queue full (maxsize={}), dropping tick for con_id={} (total dropped={})",
+                    QUEUE_MAXSIZE, con_id, self._dropped_ticks,
                 )
 
     def _ticker_to_update(

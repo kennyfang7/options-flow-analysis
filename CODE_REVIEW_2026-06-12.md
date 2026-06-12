@@ -160,7 +160,7 @@ ticker = tickers[0]
 
 ---
 
-### [ ] H4. IV skew includes MULTI_LEG trades — inconsistent with other metrics
+### [x] H4. IV skew includes MULTI_LEG trades — inconsistent with other metrics
 **File:** `src/analysis/sentiment.py:219–230`
 
 Delta/gamma exposure (line 243: sign forced to 0.0) and bullish/bearish premium (lines 264,
@@ -190,7 +190,7 @@ Recommendation: **(a)** — IV is a property of the contract, not the order's di
 
 ## MEDIUM
 
-### [ ] M1. `_send_email` called synchronously on the event loop
+### [x] M1. `_send_email` called synchronously on the event loop
 **File:** `src/alerts/notifier.py:61`
 
 ```python
@@ -206,7 +206,7 @@ honored when SMTP is implemented.
 
 ---
 
-### [ ] M2. Blocking `ib.disconnect()` inside async `disconnect()`
+### [x] M2. Blocking `ib.disconnect()` inside async `disconnect()`
 **File:** `src/connection/ibkr_client.py:121`
 
 `IB.disconnect()` is synchronous socket teardown; can stall the loop if the socket is stuck.
@@ -217,7 +217,7 @@ disconnected-event handler checks the flag).
 
 ---
 
-### [ ] M3. TickStream event-hook register/unregister not defensive
+### [x] M3. TickStream event-hook register/unregister not defensive
 **File:** `src/data/tick_stream.py:289–292, 330`
 
 - `subscribe()` checks `if not self._event_hooked` but the method awaits between check and
@@ -248,7 +248,7 @@ if self._event_hooked and not self._subscriptions:
 
 ---
 
-### [ ] M4. `_PRIORITY` completeness not asserted
+### [x] M4. `_PRIORITY` completeness not asserted
 **Files:** `src/analysis/unusual_detector.py:107` · `src/analysis/smart_money.py:68`
 
 `smart_money.py` asserts `_CONFIDENCE_WEIGHTS` covers every `SmartMoneyReason` (lines 78–80)
@@ -269,7 +269,7 @@ assert set(_PRIORITY) == set(SmartMoneyReason), (
 
 ---
 
-### [ ] M5. `setup_callbacks` state param typed as `object`
+### [x] M5. `setup_callbacks` state param typed as `object`
 **File:** `src/dashboard/callbacks.py:213`
 
 ```python
@@ -288,7 +288,7 @@ def setup_callbacks(app: Dash, state: SharedState) -> None: ...
 
 ---
 
-### [ ] M6. Silent tick drops on full queue — no observability
+### [x] M6. Silent tick drops on full queue — no observability
 **File:** `src/data/tick_stream.py:378–384`
 
 On `asyncio.QueueFull` the tick is dropped with only a warning log. During bursts this is
@@ -301,7 +301,7 @@ by design (see MEMORY: pendingTickersEvent handler is sync).
 
 ---
 
-### [ ] M7. Dead shadowed import in earnings parser
+### [x] M7. Dead shadowed import in earnings parser
 **File:** `src/utils/earnings.py:180–181`
 
 ```python
@@ -351,7 +351,7 @@ relative offsets (`now - timedelta(hours=2)`). Note: `datetime(2020, 1, 1)` in
 test_unusual_detector.py:454 is **intentional** (stale-purge test needs an old date) — add a
 comment there rather than changing it.
 
-### [ ] T2 (Medium). Duplicate `make_tick` / `make_trade` factory helpers
+### [x] T2 (Medium). Duplicate `make_tick` / `make_trade` factory helpers
 Defined independently in test_flow_classifier.py, test_alerts.py, test_unusual_detector.py,
 test_tick_stream.py, test_greeks_engine.py, test_smart_money.py. Move canonical versions to
 `tests/conftest.py` (plain functions, not fixtures, so defaults can be overridden per call)

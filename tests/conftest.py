@@ -1,12 +1,87 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config.settings import Settings
+from src.analysis.flow_classifier import Aggressor, ClassifiedTrade, TradeType
+from src.data.tick_stream import TickUpdate
 from src.storage.models import Base
+
+
+# ---------------------------------------------------------------------------
+# Shared test factory helpers (plain functions — not fixtures)
+# ---------------------------------------------------------------------------
+
+
+def make_tick(**overrides) -> TickUpdate:
+    """Factory for TickUpdate with sensible defaults for unit tests.
+
+    All keyword arguments override individual fields. Timestamp defaults to
+    datetime.now(timezone.utc) so tests are not sensitive to hardcoded dates.
+    """
+    defaults = dict(
+        symbol="SPY",
+        con_id=12345,
+        expiry="20260320",
+        strike=500.0,
+        right="C",
+        timestamp=datetime.now(timezone.utc),
+        bid=2.00,
+        ask=2.50,
+        last=2.45,
+        volume=100,
+        open_interest=1000,
+        last_size=50,
+        underlying_price=500.0,
+        implied_vol=0.25,
+        delta=0.45,
+    )
+    defaults.update(overrides)
+    return TickUpdate(**defaults)
+
+
+def make_trade(tick: TickUpdate | None = None, **overrides) -> ClassifiedTrade:
+    """Factory for ClassifiedTrade with sensible defaults for unit tests.
+
+    Builds a tick via make_tick() if none is supplied. All keyword arguments
+    override individual ClassifiedTrade fields; tick-derived fields (symbol,
+    expiry, etc.) use the tick's values unless explicitly overridden.
+    """
+    if tick is None:
+        tick = make_tick()
+    defaults = dict(
+        symbol=tick.symbol,
+        con_id=tick.con_id,
+        expiry=tick.expiry,
+        right=tick.right,
+        strike=tick.strike,
+        underlying_price=tick.underlying_price,
+        implied_vol=tick.implied_vol,
+        delta=tick.delta,
+        trade_type=TradeType.BLOCK,
+        aggressor=Aggressor.BUY,
+        spread_position=0.9,
+        effective_price=2.45,
+        last_size=50,
+        premium=12_250.0,   # 50 * 2.45 * 100
+        signal_strength=1.0,
+        volume_delta=50,
+        window_ticks=1,
+        timestamp=tick.timestamp,
+        tick=tick,
+    )
+    defaults.update(overrides)
+    return ClassifiedTrade(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# pytest configuration
+# ---------------------------------------------------------------------------
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -23,6 +23,10 @@ class SentimentSnapshot(BaseModel):
     Note on IV skew: avg_call_iv and avg_put_iv are simple unweighted
     means across OTM trades in the window. This is a rough directional
     proxy, not a precise skew surface — IV varies by strike and expiry.
+    MULTI_LEG legs are intentionally included in these averages: IV is a
+    property of the contract, not the order's direction. This differs from
+    net_delta_exposure, net_gamma_exposure, bullish_premium, and
+    bearish_premium, which all exclude MULTI_LEG trades.
 
     Note on directional_bias vs net_premium: NEUTRAL-aggressor trades
     contribute to call_premium / put_premium (and thus net_premium) but

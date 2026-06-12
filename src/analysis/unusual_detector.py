@@ -110,6 +110,9 @@ _PRIORITY = [
     UnusualReason.SIGNAL_STRENGTH,
     UnusualReason.OTM_PREMIUM,
 ]
+assert set(_PRIORITY) == set(UnusualReason), (
+    "_PRIORITY must contain an entry for every UnusualReason"
+)
 
 
 class UnusualDetector:

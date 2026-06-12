@@ -74,6 +74,9 @@ _PRIORITY: list[SmartMoneyReason] = [
     SmartMoneyReason.UNUSUAL_VOLUME,
     SmartMoneyReason.LARGE_BLOCK,
 ]
+assert set(_PRIORITY) == set(SmartMoneyReason), (
+    "_PRIORITY must contain an entry for every SmartMoneyReason"
+)
 
 assert set(_CONFIDENCE_WEIGHTS) == set(SmartMoneyReason), (
     "_CONFIDENCE_WEIGHTS must contain an entry for every SmartMoneyReason"

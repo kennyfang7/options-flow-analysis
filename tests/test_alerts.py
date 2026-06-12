@@ -7,25 +7,16 @@ from unittest.mock import patch
 import pytest
 import requests as req_lib
 
+from conftest import make_tick
+
 
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
 
-def _make_tick():
-    from src.data.tick_stream import TickUpdate
-    return TickUpdate(
-        symbol="SPY", con_id=12345, expiry="20261219", strike=500.0, right="C",
-        timestamp=datetime.now(timezone.utc),
-        bid=2.0, ask=2.5, last=2.45,
-        volume=100, open_interest=1000, last_size=50,
-        underlying_price=500.0, implied_vol=0.25, delta=0.45,
-    )
-
-
 def _make_classified_trade(tick=None, **overrides):
     from src.analysis.flow_classifier import ClassifiedTrade, TradeType, Aggressor
-    tick = tick or _make_tick()
+    tick = tick or make_tick(expiry="20261219")
     ts = datetime.now(timezone.utc)
     defaults = dict(
         symbol="SPY", con_id=12345, expiry="20261219", right="C", strike=500.0,
@@ -62,7 +53,7 @@ def _make_unusual_signal(**overrides):
 def _make_enriched_trade(**overrides):
     from src.analysis.greeks_engine import EnrichedTrade, Moneyness
     from src.analysis.flow_classifier import TradeType, Aggressor
-    tick = _make_tick()
+    tick = make_tick(expiry="20261219")
     ts = datetime.now(timezone.utc)
     defaults = dict(
         symbol="SPY", con_id=12345, expiry="20261219", right="C", strike=500.0,

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from dash import Dash, Input, Output, State, html
+
+if TYPE_CHECKING:
+    from src.dashboard.shared_state import SharedState
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -210,7 +214,7 @@ def _query_trade_rows(symbol: str | None, limit: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def setup_callbacks(app: Dash, state: object) -> None:
+def setup_callbacks(app: Dash, state: SharedState) -> None:
     """Register all dcc.Interval-driven callbacks on the Dash app.
 
     Args:
