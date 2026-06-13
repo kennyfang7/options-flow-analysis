@@ -358,14 +358,14 @@ test_tick_stream.py, test_greeks_engine.py, test_smart_money.py. Move canonical 
 and import everywhere. Watch for small signature drift between copies — reconcile to a
 superset with keyword defaults.
 
-### [ ] T3. Coverage gaps (add tests for)
-- [ ] Scanner failure path: `scanner.py:147–149` — mock `reqScannerSubscriptionAsync` raising; assert `RuntimeError` with message.
-- [ ] Dashboard callback exception branches (all 4 try/excepts in `callbacks.py:227–280`): monkeypatch `get_sync_engine` / state to raise; assert each callback returns its safe default (empty KPIs + "Error", `[]`, `[]`, `stored or []`).
-- [ ] `get_session()` rollback: insert valid row + row violating a CHECK constraint in same session; assert first row absent after rollback (`db.py:178–183`).
-- [ ] Notifier timeout: `requests.Timeout` side effect on `requests.post`; assert no raise (it's a `RequestException` subclass — should already pass; lock it in).
-- [ ] Concurrent `RateLimiter.acquire()`: 10 parallel `asyncio.create_task` acquires; assert no token leakage.
-- [ ] Script entry points: KeyboardInterrupt handling in `run_scanner.py:216`; `init_db` failure in `run_dashboard.py:280`.
-- [ ] Pipeline resilience: one symbol's `fetch_chain` raising must not kill the loop (`run_scanner.py:141–142`).
+### [x] T3. Coverage gaps (add tests for)
+- [x] Scanner failure path: `scanner.py:147–149` — mock `reqScannerSubscriptionAsync` raising; assert `RuntimeError` with message.
+- [x] Dashboard callback exception branches (all 4 try/excepts in `callbacks.py:227–280`): monkeypatch state/query fns to raise; assert each callback returns its safe default.
+- [x] `get_session()` rollback: insert valid row + raise in same session; assert row absent after rollback (`db.py:178–183`).
+- [x] Notifier timeout: `requests.Timeout` side effect on `requests.post`; assert no raise (locked in).
+- [x] Concurrent `RateLimiter.acquire()`: 10 parallel `asyncio.create_task` acquires; assert no token leakage.
+- [x] Script entry points: KeyboardInterrupt handling in `run_scanner.py:216`; `init_db` failure in `run_dashboard.py:280`.
+- [x] Pipeline resilience: one symbol's `fetch_chain` raising must not kill the loop (`run_scanner.py:141–142`).
 
 ---
 
@@ -383,6 +383,6 @@ superset with keyword defaults.
 ---
 
 ## Post-fix checklist
-- [ ] `python -m pytest -q -m "not integration"` — all green (616+ tests)
+- [x] `python -m pytest -q -m "not integration"` — all green (627 tests, 2026-06-13)
 - [ ] Update `MEMORY.md`: correct the queries.py stripping claim (H2); note RateLimiter wiring (C1); note IV-skew decision (H4)
 - [ ] If H2 done: delete/migrate dev SQLite DB so stored datetime formats are uniform

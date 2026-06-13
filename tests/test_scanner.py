@@ -216,6 +216,21 @@ async def test_scan_hot_by_volume_calls_correct_code(mock_ibkr_client: MagicMock
 
 
 # ---------------------------------------------------------------------------
+# Tests: scan() failure path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scan_raises_runtime_error_on_subscription_failure(mock_ibkr_client: MagicMock) -> None:
+    """reqScannerSubscriptionAsync raising → RuntimeError with scan_code in message."""
+    mock_ibkr_client.ib.reqScannerSubscriptionAsync = AsyncMock(
+        side_effect=RuntimeError("IBKR internal error")
+    )
+    scanner = MarketScanner(mock_ibkr_client)
+    with pytest.raises(RuntimeError, match=f"Scanner subscription failed for {SCAN_UNUSUAL_VOLUME}"):
+        await scanner.scan(SCAN_UNUSUAL_VOLUME)
+
+
+# ---------------------------------------------------------------------------
 # Integration test (requires live TWS/Gateway)
 # ---------------------------------------------------------------------------
 

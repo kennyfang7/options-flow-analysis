@@ -420,3 +420,120 @@ class TestCreateApp:
         state = SharedState()
         app = create_app(state)
         assert app is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests: callback exception branches (T3)
+# ---------------------------------------------------------------------------
+
+class TestCallbackExceptionBranches:
+    """Each Dash callback's except branch returns its documented safe default.
+
+    Callbacks are invoked via Flask test client POST to /_dash-update-component,
+    which is Dash's standard callback dispatch endpoint.
+    """
+
+    _SIGNALS_PAYLOAD = {
+        "output": "signals-table.data",
+        "outputs": {"id": "signals-table", "property": "data"},
+        "inputs": [
+            {"id": "slow-interval", "property": "n_intervals", "value": 1},
+            {"id": "symbol-dropdown", "property": "value", "value": "SPY"},
+        ],
+        "changedPropIds": ["slow-interval.n_intervals"],
+        "state": [],
+    }
+    _TRADES_PAYLOAD = {
+        "output": "trades-table.data",
+        "outputs": {"id": "trades-table", "property": "data"},
+        "inputs": [
+            {"id": "slow-interval", "property": "n_intervals", "value": 1},
+            {"id": "symbol-dropdown", "property": "value", "value": "SPY"},
+        ],
+        "changedPropIds": ["slow-interval.n_intervals"],
+        "state": [],
+    }
+    _SENTIMENT_PAYLOAD = {
+        "output": "..sentiment-section.children...last-update.children...pipeline-status.children..",
+        "outputs": [
+            {"id": "sentiment-section", "property": "children"},
+            {"id": "last-update", "property": "children"},
+            {"id": "pipeline-status", "property": "children"},
+        ],
+        "inputs": [
+            {"id": "fast-interval", "property": "n_intervals", "value": 1},
+            {"id": "symbol-dropdown", "property": "value", "value": "SPY"},
+        ],
+        "changedPropIds": ["fast-interval.n_intervals"],
+        "state": [],
+    }
+    _ALERTS_PAYLOAD = {
+        "output": "..alerts-store.data...alerts-panel.children..",
+        "outputs": [
+            {"id": "alerts-store", "property": "data"},
+            {"id": "alerts-panel", "property": "children"},
+        ],
+        "inputs": [{"id": "fast-interval", "property": "n_intervals", "value": 1}],
+        "changedPropIds": ["fast-interval.n_intervals"],
+        "state": [{"id": "alerts-store", "property": "data", "value": None}],
+    }
+
+    def _post(self, app, payload):
+        with app.server.test_client() as client:
+            resp = client.post(
+                "/_dash-update-component",
+                json=payload,
+                content_type="application/json",
+            )
+        return resp
+
+    def test_update_signals_exception_returns_empty_list(self, monkeypatch):
+        """_query_signal_rows raising → update_signals safe default is []."""
+        state = SharedState()
+        app = create_app(state, symbols=["SPY"])
+        monkeypatch.setattr(
+            "src.dashboard.callbacks._query_signal_rows",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("DB down")),
+        )
+        resp = self._post(app, self._SIGNALS_PAYLOAD)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["response"]["signals-table"]["data"] == []
+
+    def test_update_trades_exception_returns_empty_list(self, monkeypatch):
+        """_query_trade_rows raising → update_trades safe default is []."""
+        state = SharedState()
+        app = create_app(state, symbols=["SPY"])
+        monkeypatch.setattr(
+            "src.dashboard.callbacks._query_trade_rows",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("DB down")),
+        )
+        resp = self._post(app, self._TRADES_PAYLOAD)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["response"]["trades-table"]["data"] == []
+
+    def test_update_sentiment_exception_returns_safe_defaults(self):
+        """state.get_sentiment raising → update_sentiment safe default is (kpis, 'Error', '')."""
+        from unittest.mock import MagicMock
+        bad_state = MagicMock()
+        bad_state.get_sentiment.side_effect = RuntimeError("state error")
+        app = create_app(bad_state, symbols=["SPY"])
+        resp = self._post(app, self._SENTIMENT_PAYLOAD)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["response"]["last-update"]["children"] == "Error"
+        assert data["response"]["pipeline-status"]["children"] == ""
+        assert len(data["response"]["sentiment-section"]["children"]) == 8
+
+    def test_update_alerts_exception_returns_stored_and_empty_children(self):
+        """state.drain_alerts raising → update_alerts safe default is (stored or [], [])."""
+        from unittest.mock import MagicMock
+        bad_state = MagicMock()
+        bad_state.drain_alerts.side_effect = RuntimeError("drain error")
+        app = create_app(bad_state, symbols=["SPY"])
+        resp = self._post(app, self._ALERTS_PAYLOAD)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["response"]["alerts-store"]["data"] == []
+        assert data["response"]["alerts-panel"]["children"] == []

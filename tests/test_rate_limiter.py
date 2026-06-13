@@ -270,3 +270,17 @@ class TestRateLimiter:
     def test_historical_window_constant(self):
         """Pacing window constant is exactly 600 seconds (10 minutes)."""
         assert _HISTORICAL_WINDOW_SECONDS == 600.0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_acquire_no_token_leakage(self):
+        """10 concurrent acquire() calls never produce a negative token count."""
+        settings = make_settings(ibkr_max_messages_per_sec=10)
+        limiter = RateLimiter(settings=settings)
+
+        with patch("src.connection.rate_limiter.asyncio.sleep", new=AsyncMock()):
+            tasks = [asyncio.create_task(limiter.acquire()) for _ in range(10)]
+            await asyncio.gather(*tasks)
+
+        assert limiter._bucket._tokens >= 0.0, (
+            f"Token leakage detected: _tokens={limiter._bucket._tokens}"
+        )

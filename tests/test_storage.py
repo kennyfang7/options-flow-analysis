@@ -122,6 +122,39 @@ async def test_get_session_rollbacks_on_exception():
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_get_session_rollback_discards_uncommitted_rows():
+    """Rows added inside a failing session are NOT visible after rollback."""
+    from datetime import datetime
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy import select
+    from src.storage.db import init_db, get_session
+    from src.storage.models import ChainSnapshot
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    await init_db(engine=engine)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    with pytest.raises(ValueError, match="abort"):
+        async with get_session(session_factory=factory) as session:
+            session.add(ChainSnapshot(
+                underlying="SPY",
+                underlying_price=500.0,
+                captured_at=datetime.utcnow(),
+            ))
+            raise ValueError("abort")
+
+    # Verify the row was NOT committed — rollback was effective
+    async with factory() as check:
+        result = await check.execute(
+            select(ChainSnapshot).where(ChainSnapshot.underlying == "SPY")
+        )
+        rows = result.scalars().all()
+    assert rows == [], "Rolled-back row must not be visible after the session exits"
+
+    await engine.dispose()
+
+
 async def test_insert_chain_snapshot_returns_id(async_db_session):
     from datetime import datetime, timezone
     from src.data.chain_fetcher import OptionChainSnapshot

@@ -432,6 +432,20 @@ async def test_notifier_handles_discord_request_exception_without_raising():
         await notifier.send(alert)
 
 
+def test_notifier_discord_timeout_does_not_raise():
+    """requests.Timeout (a RequestException subclass) is swallowed by _send_discord."""
+    from src.alerts.rules import Alert, AlertLevel
+    with patch("src.alerts.notifier.requests.post", side_effect=req_lib.Timeout("connection timed out")):
+        notifier = _make_notifier(discord_webhook_url="https://discord.com/api/webhooks/test")
+        alert = Alert(
+            symbol="SPY", level=AlertLevel.HIGH, title="T", body="B",
+            source="unusual", emitted_at=datetime.now(timezone.utc),
+            metadata={},
+        )
+        # _send_discord is sync — call directly; must not raise
+        notifier._send_discord(alert)
+
+
 @pytest.mark.asyncio
 async def test_notifier_skips_email_when_empty():
     """No-op email must not raise and must not call requests.post."""
