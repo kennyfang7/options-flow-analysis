@@ -59,6 +59,11 @@ class _TokenBucket:
         self._refill()
         return self._tokens
 
+    @property
+    def capacity(self) -> float:
+        """Maximum token capacity of this bucket (read-only)."""
+        return self._capacity
+
 
 class _SlidingWindow:
     """Sliding window counter for IBKR historical data pacing.
@@ -162,10 +167,11 @@ class RateLimiter:
                 self._settings.ibkr_max_historical_per_10min,
             )
 
+        available_before = self._bucket.available
         await self._bucket.consume()
         logger.debug(
             "RateLimiter: general token acquired ({:.1f} remaining)",
-            self._bucket.available,
+            available_before - 1.0,
         )
 
     def stats(self) -> dict[str, object]:
@@ -180,7 +186,7 @@ class RateLimiter:
         """
         return {
             "bucket_available": round(self._bucket.available, 2),
-            "bucket_capacity": self._bucket._capacity,
+            "bucket_capacity": self._bucket.capacity,
             "historical_used": self._historical.used,
             "historical_max": self._settings.ibkr_max_historical_per_10min,
         }

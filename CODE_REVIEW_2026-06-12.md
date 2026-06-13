@@ -315,24 +315,24 @@ from datetime import date as _date   # never used; module-level `date` already i
 
 ## LOW
 
-### [ ] L1. `src/data/historical.py` is a 0-byte stub
+### [x] L1. `src/data/historical.py` is a 0-byte stub
 Either implement (CLAUDE.md describes it: historical bars via `reqHistoricalData`, must use
 `limiter.acquire("historical")`) or delete the file and remove from CLAUDE.md's structure
 diagram. If C1 lands first, implementing it later gets the limiter for free.
 
-### [ ] L2. `get_sync_engine` missing from `src/storage/__init__.py` `__all__`
+### [x] L2. `get_sync_engine` missing from `src/storage/__init__.py` `__all__`
 It's a public API used by dashboard callbacks. Add to the export list.
 
-### [ ] L3. `premium_str` could be inlined — `src/alerts/rules.py:232` (cosmetic)
+### [x] L3. `premium_str` could be inlined — `src/alerts/rules.py:232` (cosmetic)
 
-### [ ] L4. Layout docstring missing `pipeline-status` — `src/dashboard/layouts.py:24–26`
+### [x] L4. Layout docstring missing `pipeline-status` — `src/dashboard/layouts.py:24–26`
 The "IDs defined:" list omits the `pipeline-status` span added at lines 64–67.
 
-### [ ] L5. Comment the chain_fetcher sleeps — `src/data/chain_fetcher.py:442–473`
+### [x] L5. Comment the chain_fetcher sleeps — `src/data/chain_fetcher.py:442–473`
 After C1 they will look like redundant rate limiting. Add:
 `# settlement delay so IBKR market data populates — NOT rate limiting (RateLimiter handles pacing)`
 
-### [ ] L6. RateLimiter logging/encapsulation nits — `src/connection/rate_limiter.py:165–169, 183`
+### [x] L6. RateLimiter logging/encapsulation nits — `src/connection/rate_limiter.py:165–169, 183`
 Debug log reads `self._bucket.available` *after* consume (property re-refills → misleading
 value); `stats()` reaches into `_bucket._capacity`. Fix: capture available before consume or
 drop the log; add a public `capacity` property.

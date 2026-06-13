@@ -23,7 +23,8 @@ def build_layout(
 
     IDs defined:
         fast-interval, slow-interval, alerts-store, symbol-dropdown,
-        last-update, sentiment-section, signals-table, trades-table, alerts-panel
+        last-update, pipeline-status, sentiment-section, signals-table,
+        trades-table, alerts-panel
 
     Args:
         symbols: Ticker symbols for the dropdown. First symbol is pre-selected.

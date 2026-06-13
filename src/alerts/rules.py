@@ -229,13 +229,12 @@ class AlertRules:
             else:
                 body_lines.append(f"📅 Earnings in {dte}d")
 
-        premium_str = f"{signal.premium:,.0f}" if signal.premium is not None else "N/A"
         logger.debug(
             "evaluate_unusual: {} {} level={} premium={}",
             signal.symbol,
             signal.top_reason.value,
             level.value,
-            premium_str,
+            f"{signal.premium:,.0f}" if signal.premium is not None else "N/A",
         )
 
         return Alert(

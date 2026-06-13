@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.storage.db import get_session, init_db
+from src.storage.db import get_session, get_sync_engine, init_db
 from src.storage.models import (
     Base,
     ChainSnapshot,
@@ -27,6 +27,7 @@ __all__ = [
     "OptionTick",
     "UnusualSignalRecord",
     "get_session",
+    "get_sync_engine",
     "init_db",
     "insert_chain_snapshot",
     "insert_classified_trade",
