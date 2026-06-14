@@ -199,6 +199,26 @@ def _clean_int(value: float | None) -> int | None:
     return int(cleaned)
 
 
+def _first_valid_price(*values: float | None) -> float | None:
+    """Return the first value that is not None and strictly positive.
+
+    Using ``or``-chaining treats ``0.0`` as falsy and falls through to the
+    next candidate. This helper avoids that pitfall — a genuine ``0.0``
+    midpoint (emitted by IBKR for illiquid pre-market snapshots) would
+    otherwise be skipped in favour of a stale close price.
+
+    Args:
+        *values: Price candidates in priority order.
+
+    Returns:
+        First strictly-positive price, or None if all are absent/zero.
+    """
+    for v in values:
+        if v is not None and v > 0.0:
+            return v
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Chain fetcher
 # ---------------------------------------------------------------------------
@@ -345,7 +365,11 @@ class ChainFetcher:
                 f"Expected exactly 1 ticker for {stock.symbol}, got {len(tickers)}"
             )
         [ticker] = tickers
-        price = _clean(ticker.midpoint()) or _clean(ticker.last) or _clean(ticker.close)
+        price = _first_valid_price(
+            _clean(ticker.midpoint()),
+            _clean(ticker.last),
+            _clean(ticker.close),
+        )
         if price is None:
             raise ValueError(f"Could not determine price for {stock.symbol}")
         return price

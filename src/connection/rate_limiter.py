@@ -35,6 +35,7 @@ class _TokenBucket:
         self._capacity = capacity if capacity is not None else rate
         self._tokens = self._capacity
         self._last_refill = time.monotonic()
+        self._lock = asyncio.Lock()
 
     def _refill(self) -> None:
         now = time.monotonic()
@@ -45,12 +46,13 @@ class _TokenBucket:
     async def consume(self) -> None:
         """Block until a token is available, then consume it."""
         while True:
-            self._refill()
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
-                return
-            # Sleep until the next token arrives.
-            wait = (1.0 - self._tokens) / self._rate
+            async with self._lock:
+                self._refill()
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                # Sleep until the next token arrives — outside the lock.
+                wait = (1.0 - self._tokens) / self._rate
             await asyncio.sleep(wait)
 
     @property
@@ -81,22 +83,24 @@ class _SlidingWindow:
         self._max_requests = max_requests
         self._window_seconds = window_seconds
         self._timestamps: deque[float] = deque()
+        self._lock = asyncio.Lock()
 
     def _evict_old(self, now: float) -> None:
         cutoff = now - self._window_seconds
-        while self._timestamps and self._timestamps[0] <= cutoff:
+        while self._timestamps and self._timestamps[0] < cutoff:  # M11: strict < keeps boundary timestamp
             self._timestamps.popleft()
 
     async def consume(self) -> None:
         """Block until capacity is available in the window, then record a slot."""
         while True:
-            now = time.monotonic()
-            self._evict_old(now)
-            if len(self._timestamps) < self._max_requests:
-                self._timestamps.append(now)
-                return
-            # Sleep until the oldest entry expires.
-            wait = self._window_seconds - (now - self._timestamps[0])
+            async with self._lock:
+                now = time.monotonic()
+                self._evict_old(now)
+                if len(self._timestamps) < self._max_requests:
+                    self._timestamps.append(now)
+                    return
+                # Sleep until the oldest entry expires — outside the lock.
+                wait = self._window_seconds - (now - self._timestamps[0])
             await asyncio.sleep(max(wait, 0.0))
 
     @property

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from loguru import logger
@@ -219,7 +219,8 @@ def _days_to_expiry(expiry: str) -> int:
         Days remaining (0 if already expired or expiring today).
     """
     exp_date = date(int(expiry[:4]), int(expiry[4:6]), int(expiry[6:8]))
-    delta = (exp_date - date.today()).days
+    today_utc = datetime.now(timezone.utc).date()
+    delta = (exp_date - today_utc).days
     return max(delta, 0)
 
 
