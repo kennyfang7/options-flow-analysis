@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic import BaseModel, field_validator
 
-from config.settings import settings as _settings
-
 if TYPE_CHECKING:
     from src.connection.ibkr_client import IBKRClient
 
@@ -89,7 +87,12 @@ class MarketScanner:
                 print(r.rank, r.symbol, r.scan_code)
     """
 
-    def __init__(self, client: IBKRClient, limiter: RateLimiter | None = None) -> None:
+    def __init__(
+        self,
+        client: IBKRClient,
+        limiter: RateLimiter | None = None,
+        settings=None,
+    ) -> None:
         """Initialize with a connected IBKRClient.
 
         Args:
@@ -97,10 +100,15 @@ class MarketScanner:
             limiter: Shared RateLimiter instance. If None, a new one is created.
                 Pass the same limiter to ChainFetcher, TickStream, and MarketScanner
                 so the 48 msg/sec budget is enforced across all three.
+            settings: Settings instance. If None, loaded from config.settings
+                (lazy-loaded to allow test injection without monkeypatching).
         """
+        if settings is None:
+            from config.settings import settings as _settings
+            settings = _settings
         self._client = client
         self._ib = client.ib
-        self._settings = _settings
+        self._settings = settings
         self._limiter = limiter if limiter is not None else RateLimiter()
 
     # ------------------------------------------------------------------
@@ -155,7 +163,10 @@ class MarketScanner:
             logger.exception("scan: reqScannerSubscriptionAsync failed for {}: {}", scan_code, exc)
             raise RuntimeError(f"Scanner subscription failed for {scan_code}") from exc
 
-        results = [self._parse_scan_data(r, scan_code=scan_code) for r in raw_results]
+        results = [
+            r for r in (self._parse_scan_data(item, scan_code=scan_code) for item in raw_results)
+            if r is not None
+        ]
         results.sort(key=lambda r: r.rank)
 
         logger.info("scan: {} returned {} results", scan_code, len(results))
@@ -222,35 +233,41 @@ class MarketScanner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _parse_scan_data(self, raw: object, *, scan_code: str) -> ScannerResult:
+    def _parse_scan_data(self, raw: object, *, scan_code: str) -> ScannerResult | None:
         """Parse a raw ib_insync ScanData object into a ScannerResult.
 
         Normalizes empty strings to None and converts conId=0 to None.
+        Returns None for malformed rows so one bad entry does not drop the full scan.
 
         Args:
             raw: A single ScanData entry from reqScannerSubscriptionAsync.
             scan_code: The IBKR scan code that produced this result.
 
         Returns:
-            ScannerResult with all available fields populated.
+            ScannerResult with all available fields populated, or None if the
+            row is malformed (missing contractDetails / contract attributes).
         """
-        cd = raw.contractDetails
-        c = cd.contract
+        try:
+            cd = raw.contractDetails
+            c = cd.contract
 
-        def _opt_str(v: str) -> str | None:
-            return v if v else None
+            def _opt_str(v: str) -> str | None:
+                return v if v else None
 
-        return ScannerResult(
-            rank=raw.rank,
-            symbol=c.symbol,
-            con_id=c.conId or None,
-            description=getattr(c, "localSymbol", "") or "",
-            distance=_opt_str(raw.distance),
-            benchmark=_opt_str(raw.benchmark),
-            projection=_opt_str(raw.projection),
-            scan_code=scan_code,
-            scanned_at=datetime.now(timezone.utc),
-        )
+            return ScannerResult(
+                rank=raw.rank,
+                symbol=c.symbol,
+                con_id=c.conId or None,
+                description=getattr(c, "localSymbol", "") or "",
+                distance=_opt_str(raw.distance),
+                benchmark=_opt_str(raw.benchmark),
+                projection=_opt_str(raw.projection),
+                scan_code=scan_code,
+                scanned_at=datetime.now(timezone.utc),
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.warning("_parse_scan_data: skipping malformed row {!r}: {}", raw, exc)
+            return None
 
 
 # ---------------------------------------------------------------------------

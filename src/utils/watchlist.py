@@ -178,7 +178,8 @@ class WatchlistManager:
         """Persist the current watchlist to disk as JSON.
 
         Saves to the configured path (converting ``.txt`` suffix to ``.json``
-        if necessary so the richer format is preserved).
+        if necessary so the richer format is preserved). Uses atomic write
+        (temp file + rename) to prevent corruption on crash.
         """
         save_path = (
             self._path.with_suffix(".json")
@@ -191,9 +192,16 @@ class WatchlistManager:
                 e.model_dump(mode="json") for e in self._entries.values()
             ]
         }
-        save_path.write_text(
-            json.dumps(data, indent=2, default=str), encoding="utf-8"
-        )
+        tmp_path = save_path.with_suffix(".json.tmp")
+        try:
+            tmp_path.write_text(
+                json.dumps(data, indent=2, default=str), encoding="utf-8"
+            )
+            tmp_path.replace(save_path)
+        except OSError:
+            logger.exception("Failed to save watchlist to {}", save_path)
+            tmp_path.unlink(missing_ok=True)
+            raise
         self._mtime = save_path.stat().st_mtime
         logger.info("Saved {} symbols to {}", len(self._entries), save_path)
 

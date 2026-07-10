@@ -133,6 +133,7 @@ class ClassifiedTradeRecord(Base):
 
     __tablename__ = "classified_trades"
     __table_args__ = (
+        Index("ix_classified_trades_classified_at", "classified_at"),
         Index("ix_classified_trades_symbol_at", "symbol", "classified_at"),
         Index("ix_classified_trades_con_id_at", "con_id", "classified_at"),
         Index("ix_classified_trades_symbol_aggressor_at", "symbol", "aggressor", "classified_at"),
@@ -180,6 +181,7 @@ class UnusualSignalRecord(Base):
 
     __tablename__ = "unusual_signals"
     __table_args__ = (
+        Index("ix_unusual_signals_flagged_at", "flagged_at"),
         Index("ix_unusual_signals_symbol_flagged_at", "symbol", "flagged_at"),
         Index("ix_unusual_signals_con_id_flagged_at", "con_id", "flagged_at"),
         CheckConstraint("strike > 0", name="ck_unusual_signals_strike_positive"),

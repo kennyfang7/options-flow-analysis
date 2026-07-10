@@ -348,13 +348,14 @@ class TickStream:
             len(con_ids_to_remove), self.subscribed_count,
         )
 
-        if self._event_hooked and not self._subscriptions:
-            try:
-                self._ib.pendingTickersEvent -= self._on_pending_tickers
-            except ValueError:
-                logger.warning("unsubscribe: pendingTickersEvent handler was not registered")
-            self._event_hooked = False
-            logger.debug("unsubscribe: pendingTickersEvent unhooked")
+        async with self._hook_lock:
+            if self._event_hooked and not self._subscriptions:
+                try:
+                    self._ib.pendingTickersEvent -= self._on_pending_tickers
+                except ValueError:
+                    logger.warning("unsubscribe: pendingTickersEvent handler was not registered")
+                self._event_hooked = False
+                logger.debug("unsubscribe: pendingTickersEvent unhooked")
 
     async def __aenter__(self) -> TickStream:
         """Return self — connection is managed by IBKRClient.

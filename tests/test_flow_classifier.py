@@ -94,7 +94,7 @@ def test_classified_trade_tick_excluded_from_serialization():
         implied_vol=None, delta=None, trade_type=TradeType.UNKNOWN,
         aggressor=Aggressor.NEUTRAL, spread_position=None,
         effective_price=None, last_size=None, premium=None,
-        signal_strength=None, volume_delta=0, window_ticks=1,
+        signal_strength=None, volume_delta=1, window_ticks=1,
         timestamp=tick.timestamp, tick=tick,
     )
     dumped = trade.model_dump()
@@ -481,8 +481,13 @@ def test_classify_multi_leg_strategy_combo_fallback():
     assert _classify_multi_leg_strategy(legs) == MultiLegStrategy.COMBO
 
 
-def test_strategy_net_premium_accumulates_across_legs():
-    """strategy_net_premium on the second leg equals sum of both legs' premiums."""
+def test_strategy_net_premium_is_none_on_classified_trade():
+    """strategy_net_premium is None on ClassifiedTrade (H4 fix).
+
+    sym_win contains all contracts within multi_leg_window_seconds, not just
+    the current strategy's legs, so summing it produces polluted results.
+    rules.py computes the correct per-strategy net premium from buffered legs.
+    """
     from src.analysis.flow_classifier import FlowClassifier
     s = Settings(
         min_premium=100.0,
@@ -491,13 +496,11 @@ def test_strategy_net_premium_accumulates_across_legs():
     )
     classifier = FlowClassifier(s)
     base = datetime.now(timezone.utc)
-    # leg 1: premium = 50 * 2.45 * 100 = 12,250
     classifier.classify(make_tick(
         con_id=11111, symbol="SPY", timestamp=base,
         volume=50, last_size=50, bid=2.00, ask=2.50, last=2.45,
         right="C", strike=500.0, expiry="20260320",
     ))
-    # leg 2: premium = 50 * 2.45 * 100 = 12,250
     r2 = classifier.classify(make_tick(
         con_id=22222, symbol="SPY",
         timestamp=base + timedelta(seconds=0.3),
@@ -506,9 +509,8 @@ def test_strategy_net_premium_accumulates_across_legs():
     ))
     assert r2 is not None
     assert r2.trade_type == TradeType.MULTI_LEG
-    assert r2.strategy_net_premium is not None
-    # Both legs in sym_win: 12,250 + 12,250 = 24,500
-    assert r2.strategy_net_premium == pytest.approx(24_500.0)
+    # strategy_net_premium is deferred to rules.py (computed from buffered legs)
+    assert r2.strategy_net_premium is None
 
 
 def test_strategy_group_consistent_within_window():

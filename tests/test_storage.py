@@ -1014,3 +1014,120 @@ async def test_insert_unusual_signal_days_to_earnings_value(async_db_session):
     )
     record = result.scalar_one()
     assert record.days_to_earnings == 2
+
+
+# ---------------------------------------------------------------------------
+# T2: db.py PostgreSQL URL adaptation (Critical)
+# ---------------------------------------------------------------------------
+
+
+def test_adapt_url_postgresql_without_asyncpg():
+    """_adapt_url adds +asyncpg to postgresql:// URLs."""
+    from src.storage.db import _adapt_url
+
+    url = "postgresql://user:pass@localhost/db"
+    result = _adapt_url(url)
+    assert result == "postgresql+asyncpg://user:pass@localhost/db"
+
+
+def test_adapt_url_postgresql_already_adapted():
+    """_adapt_url leaves postgresql+asyncpg:// URLs unchanged."""
+    from src.storage.db import _adapt_url
+
+    url = "postgresql+asyncpg://user:pass@localhost/db"
+    result = _adapt_url(url)
+    assert result == "postgresql+asyncpg://user:pass@localhost/db"
+
+
+def test_strip_async_prefix_postgresql_with_asyncpg():
+    """_strip_async_prefix removes +asyncpg from postgresql+asyncpg:// URLs."""
+    from src.storage.db import _strip_async_prefix
+
+    url = "postgresql+asyncpg://user:pass@localhost/db"
+    result = _strip_async_prefix(url)
+    assert result == "postgresql://user:pass@localhost/db"
+
+
+def test_strip_async_prefix_postgresql_without_asyncpg():
+    """_strip_async_prefix leaves postgresql:// URLs unchanged."""
+    from src.storage.db import _strip_async_prefix
+
+    url = "postgresql://user:pass@localhost/db"
+    result = _strip_async_prefix(url)
+    assert result == "postgresql://user:pass@localhost/db"
+
+
+def test_adapt_and_strip_roundtrip():
+    """Round-trip: _strip_async_prefix(_adapt_url(url)) == url."""
+    from src.storage.db import _adapt_url, _strip_async_prefix
+
+    url = "postgresql://user:pass@localhost/db"
+    adapted = _adapt_url(url)
+    restored = _strip_async_prefix(adapted)
+    assert restored == url
+
+
+# ---------------------------------------------------------------------------
+# T8: init_db() WAL-mode pragma (Medium)
+# ---------------------------------------------------------------------------
+
+
+async def test_init_db_enables_wal_mode_for_sqlite(tmp_path):
+    """init_db() issues PRAGMA journal_mode=WAL for file-based SQLite."""
+    from pathlib import Path
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
+    from src.storage.db import init_db
+
+    db_path = tmp_path / "test.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    await init_db(engine=engine)
+
+    async with engine.connect() as conn:
+        result = await conn.execute(text("PRAGMA journal_mode"))
+        mode = result.scalar()
+
+    await engine.dispose()
+    assert mode == "wal"
+
+
+# ---------------------------------------------------------------------------
+# T9: _to_naive_utc() with non-UTC timezone (Medium)
+# ---------------------------------------------------------------------------
+
+
+def test_to_naive_utc_eastern_to_utc():
+    """_to_naive_utc converts Eastern time to naive UTC."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from src.storage.queries import _to_naive_utc
+
+    # 2026-06-13 10:30 EDT (UTC-4 in summer)
+    dt = datetime(2026, 6, 13, 10, 30, 0, tzinfo=ZoneInfo("America/New_York"))
+    result = _to_naive_utc(dt)
+    # Should be 14:30 UTC (10:30 + 4 hours)
+    assert result == datetime(2026, 6, 13, 14, 30, 0)
+    assert result.tzinfo is None
+
+
+def test_to_naive_utc_utc_to_naive():
+    """_to_naive_utc converts UTC timezone-aware datetime to naive."""
+    from datetime import datetime, timezone
+    from src.storage.queries import _to_naive_utc
+
+    dt = datetime(2026, 6, 13, 14, 30, 0, tzinfo=timezone.utc)
+    result = _to_naive_utc(dt)
+    assert result == datetime(2026, 6, 13, 14, 30, 0)
+    assert result.tzinfo is None
+
+
+def test_to_naive_utc_naive_unchanged():
+    """_to_naive_utc returns naive datetime unchanged (same object)."""
+    from datetime import datetime
+    from src.storage.queries import _to_naive_utc
+
+    dt = datetime(2026, 6, 13, 14, 30, 0)
+    result = _to_naive_utc(dt)
+    assert result == dt
+    assert result is dt  # same object
+    assert result.tzinfo is None

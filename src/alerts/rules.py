@@ -154,6 +154,31 @@ class MultiLegBuffer:
         ]
         return [self._groups.pop(k) for k in done_keys]
 
+    def purge_stale(self, max_age_seconds: float = 3600.0) -> int:
+        """Evict groups that were never completed (cancelled / connection lost).
+
+        Prevents unbounded memory growth. Call alongside FlowClassifier.purge_stale()
+        and UnusualDetector.purge_stale() from the orchestration layer (e.g. hourly).
+
+        Args:
+            max_age_seconds: Groups whose most-recent leg arrived more than this
+                many seconds ago are considered abandoned and removed.
+
+        Returns:
+            Number of groups evicted.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        stale_keys = [
+            k for k, trades in self._groups.items()
+            if max(t.timestamp for t in trades) < cutoff
+        ]
+        for k in stale_keys:
+            logger.debug("MultiLegBuffer.purge_stale: evicting abandoned group {}", k)
+            del self._groups[k]
+        if stale_keys:
+            logger.info("MultiLegBuffer.purge_stale: evicted {} stale groups", len(stale_keys))
+        return len(stale_keys)
+
 
 # ---------------------------------------------------------------------------
 # AlertRules
@@ -356,7 +381,11 @@ class AlertRules:
 
         lead          = max(trades, key=lambda t: t.timestamp)
         strategy_type = lead.multi_leg_strategy or MultiLegStrategy.COMBO
-        net_prem      = lead.strategy_net_premium or sum(t.premium or 0.0 for t in trades)
+        net_prem      = (
+            lead.strategy_net_premium
+            if lead.strategy_net_premium is not None
+            else sum(t.premium or 0.0 for t in trades)
+        )
         n_legs        = len(trades)
 
         if net_prem >= self._settings.unusual_premium_threshold:

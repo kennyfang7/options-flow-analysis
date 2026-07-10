@@ -97,6 +97,8 @@ def make_sync_engine(database_url: str | None = None) -> Engine:
 _sync_engine_lock = threading.Lock()
 _sync_engine: Engine | None = None
 
+_async_engine_lock = threading.Lock()
+
 
 def get_sync_engine() -> Engine:
     """Return the module-level synchronous engine singleton.
@@ -125,14 +127,18 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 def _get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = make_engine()
+        with _async_engine_lock:
+            if _engine is None:
+                _engine = make_engine()
     return _engine
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     global _session_factory
     if _session_factory is None:
-        _session_factory = async_sessionmaker(_get_engine(), expire_on_commit=False)
+        with _async_engine_lock:
+            if _session_factory is None:
+                _session_factory = async_sessionmaker(_get_engine(), expire_on_commit=False)
     return _session_factory
 
 

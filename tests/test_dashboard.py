@@ -537,3 +537,81 @@ class TestCallbackExceptionBranches:
         data = resp.get_json()
         assert data["response"]["alerts-store"]["data"] == []
         assert data["response"]["alerts-panel"]["children"] == []
+
+
+# ---------------------------------------------------------------------------
+# T6: shared_state.py - update_pipeline_status / get_pipeline_status
+# ---------------------------------------------------------------------------
+
+class TestPipelineStatus:
+    def test_default_pipeline_status_is_starting(self):
+        """SharedState._pipeline_status defaults to 'Starting...'."""
+        state = SharedState()
+        assert state.get_pipeline_status() == "Starting..."
+
+    def test_update_pipeline_status_and_get_returns_updated(self):
+        """update_pipeline_status('Running') then get_pipeline_status() returns 'Running'."""
+        state = SharedState()
+        state.update_pipeline_status("Running")
+        assert state.get_pipeline_status() == "Running"
+
+    def test_update_pipeline_status_overwrites_previous(self):
+        """Successive update_pipeline_status calls overwrite previous status."""
+        state = SharedState()
+        state.update_pipeline_status("Starting")
+        state.update_pipeline_status("Connecting to IBKR")
+        state.update_pipeline_status("Streaming ticks")
+        assert state.get_pipeline_status() == "Streaming ticks"
+
+
+# ---------------------------------------------------------------------------
+# T7: callbacks.py - formatting helpers
+# ---------------------------------------------------------------------------
+
+class TestFormattingHelpers:
+    """Test _fmt_ratio, _fmt_dollars, _fmt_pct formatting functions."""
+
+    def test_fmt_ratio_none_returns_dash(self):
+        """_fmt_ratio(None) returns '—'."""
+        from src.dashboard.callbacks import _fmt_ratio
+        assert _fmt_ratio(None) == "—"
+
+    def test_fmt_ratio_0_5_returns_two_decimals(self):
+        """_fmt_ratio(0.5) returns '0.50'."""
+        from src.dashboard.callbacks import _fmt_ratio
+        assert _fmt_ratio(0.5) == "0.50"
+
+    def test_fmt_ratio_1_234_rounds_to_two_decimals(self):
+        """_fmt_ratio(1.234) returns '1.23' (2 decimal places)."""
+        from src.dashboard.callbacks import _fmt_ratio
+        assert _fmt_ratio(1.234) == "1.23"
+
+    def test_fmt_dollars_none_returns_dash(self):
+        """_fmt_dollars(None) returns '—'."""
+        from src.dashboard.callbacks import _fmt_dollars
+        assert _fmt_dollars(None) == "—"
+
+    def test_fmt_dollars_1000_returns_formatted(self):
+        """_fmt_dollars(1000.0) returns '$1,000'."""
+        from src.dashboard.callbacks import _fmt_dollars
+        assert _fmt_dollars(1000.0) == "$1,000"
+
+    def test_fmt_dollars_zero_returns_zero(self):
+        """_fmt_dollars(0.0) returns '$0'."""
+        from src.dashboard.callbacks import _fmt_dollars
+        assert _fmt_dollars(0.0) == "$0"
+
+    def test_fmt_pct_none_returns_dash(self):
+        """_fmt_pct(None) returns '—'."""
+        from src.dashboard.callbacks import _fmt_pct
+        assert _fmt_pct(None) == "—"
+
+    def test_fmt_pct_0_25_returns_25_percent(self):
+        """_fmt_pct(0.25) returns '25.0%'."""
+        from src.dashboard.callbacks import _fmt_pct
+        assert _fmt_pct(0.25) == "25.0%"
+
+    def test_fmt_pct_zero_returns_zero_percent(self):
+        """_fmt_pct(0.0) returns '0.0%'."""
+        from src.dashboard.callbacks import _fmt_pct
+        assert _fmt_pct(0.0) == "0.0%"

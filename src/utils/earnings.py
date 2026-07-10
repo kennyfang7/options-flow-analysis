@@ -8,6 +8,20 @@ from loguru import logger
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _today_utc() -> date:
+    """Return today's date in UTC, accounting for timezone-aware operations.
+
+    Returns:
+        Today's date in UTC (not local system time).
+    """
+    return datetime.now(timezone.utc).date()
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -66,7 +80,7 @@ class EarningsCalendar:
         next_date = await self._get_cached(symbol)
         if next_date is None:
             return None
-        delta = (next_date - date.today()).days
+        delta = (next_date - _today_utc()).days
         return max(delta, 0)
 
     async def prefetch(self, symbols: list[str]) -> None:
@@ -135,7 +149,7 @@ class EarningsCalendar:
             ticker = yf.Ticker(symbol)
             earnings_dates = ticker.get_earnings_dates(limit=8)
 
-            today = date.today()
+            today = _today_utc()
 
             if earnings_dates is None:
                 return None

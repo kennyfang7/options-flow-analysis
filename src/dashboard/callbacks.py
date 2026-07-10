@@ -97,7 +97,7 @@ def _signal_record_to_row(r: UnusualSignalRecord) -> dict:
         Dict with keys: Time, Symbol, Type, Side, Premium, Reason.
     """
     return {
-        "Time":    r.flagged_at.strftime("%H:%M:%S"),
+        "Time":    r.flagged_at.strftime("%H:%M:%S") if r.flagged_at is not None else "—",
         "Symbol":  r.symbol,
         "Type":    r.trade_type,
         "Side":    r.aggressor,
@@ -117,7 +117,7 @@ def _trade_record_to_row(r: ClassifiedTradeRecord) -> dict:
         Dict with keys: Time, Symbol, Type, Side, Premium, Strength.
     """
     return {
-        "Time":     r.classified_at.strftime("%H:%M:%S"),
+        "Time":     r.classified_at.strftime("%H:%M:%S") if r.classified_at is not None else "—",
         "Symbol":   r.symbol,
         "Type":     r.trade_type,
         "Side":     r.aggressor,
@@ -271,7 +271,7 @@ def setup_callbacks(app: Dash, state: SharedState) -> None:
     )
     def update_alerts(n_intervals: int, stored: list[dict] | None) -> tuple[list[dict], list]:
         try:
-            new_alerts = state.drain_alerts()
+            new_alerts = state.drain_alerts(max_count=settings.dashboard_max_alerts)
             accumulated = (stored or []) + [a.model_dump(mode="json") for a in new_alerts]
             accumulated = accumulated[-settings.dashboard_max_alerts:]
             # model_dump(mode="json") serialises datetime→ISO string and AlertLevel→str.

@@ -238,6 +238,29 @@ class UnusualDetector:
             trade=trade,
         )
 
+    def seed_oi_cache(self, contracts: list) -> int:
+        """Seed the OI cache from a ChainSnapshot's contracts at startup.
+
+        Provides baseline open-interest values so OI_RATIO checks fire
+        immediately rather than waiting for the first OI tick from IBKR.
+        Call once per symbol after loading/fetching the chain snapshot.
+
+        Args:
+            contracts: List of OptionContract objects with con_id and
+                open_interest fields (e.g. snapshot.contracts).
+
+        Returns:
+            Number of entries seeded.
+        """
+        count = 0
+        for c in contracts:
+            if c.con_id is not None and c.open_interest is not None:
+                self._oi_cache[c.con_id] = c.open_interest
+                count += 1
+        if count:
+            logger.debug("unusual_detector: seeded {} OI cache entries", count)
+        return count
+
     def purge_stale(self, max_age_seconds: float = 3600.0) -> int:
         """Evict OI cache entries for contracts not seen in max_age_seconds.
 

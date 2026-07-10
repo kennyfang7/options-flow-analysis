@@ -147,7 +147,8 @@ class SentimentAggregator:
     def update(self, trade: EnrichedTrade) -> None:
         """Add an EnrichedTrade to the rolling window and prune expired entries.
 
-        Prunes using trade.timestamp as reference. Assumes trades arrive in
+        Prunes using max(trade.timestamp, wall-clock time) as reference to handle
+        delayed ticks from reconnect buffer replay. Assumes trades arrive in
         non-decreasing timestamp order.
 
         Args:
@@ -157,7 +158,8 @@ class SentimentAggregator:
         if symbol not in self._windows:
             self._windows[symbol] = deque()
         self._windows[symbol].append(trade)
-        self._prune(symbol, trade.timestamp)
+        reference = max(trade.timestamp, datetime.now(timezone.utc))
+        self._prune(symbol, reference)
 
     def _prune(self, symbol: str, reference_time: datetime) -> None:
         """Remove trades older than sentiment_window_seconds from the deque.

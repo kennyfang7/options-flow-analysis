@@ -235,7 +235,7 @@ async def load_chain_snapshot(
     snapshot = OptionChainSnapshot(
         underlying=row.underlying,
         underlying_price=row.underlying_price,
-        timestamp=row.captured_at,
+        timestamp=captured_at,
         contracts=contracts,
     )
     logger.success(
@@ -260,7 +260,7 @@ async def get_recent_ticks(
     Returns:
         List of OptionTick rows ordered by received_at ascending.
     """
-    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    since = _to_naive_utc(datetime.now(timezone.utc) - timedelta(minutes=minutes))
     result = await session.execute(
         select(OptionTick)
         .where(OptionTick.con_id == con_id, OptionTick.received_at >= since)

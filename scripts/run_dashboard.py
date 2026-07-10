@@ -108,7 +108,7 @@ async def _pipeline(
     )
 
     state.update_pipeline_status("Connecting to IB Gateway...")
-    await init_db()
+    # init_db() is called in __main__ before starting the pipeline thread.
 
     # All components require settings — pass singleton explicitly
     classifier = FlowClassifier(settings)
@@ -174,9 +174,7 @@ async def _pipeline(
                             qualified, underlying_price=snapshot.underlying_price
                         )
 
-                    for c in snapshot.contracts:
-                        if c.con_id is not None and c.open_interest is not None:
-                            unusual._oi_cache[c.con_id] = c.open_interest
+                    unusual.seed_oi_cache(snapshot.contracts)
                 except Exception:
                     logger.exception("Failed to fetch chain for {} in dashboard pipeline", symbol)
 

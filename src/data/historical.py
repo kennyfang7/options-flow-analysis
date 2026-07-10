@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from ib_insync import Stock
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from src.connection.rate_limiter import RateLimiter
 from src.data.chain_fetcher import _clean, _clean_int
@@ -59,6 +59,14 @@ class HistoricalBar(BaseModel):
     volume: int | None = None
     bar_count: int | None = None
     average: float | None = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_must_be_tz_aware(cls, v: _dt.datetime) -> _dt.datetime:
+        """Ensure timestamp is timezone-aware UTC."""
+        if v.tzinfo is None:
+            raise ValueError("timestamp must be timezone-aware (use UTC)")
+        return v
 
 
 class HistoricalBars(BaseModel):
@@ -218,7 +226,7 @@ class HistoricalFetcher:
             keepUpToDate=False,
         )
 
-        bars = [self._parse_bar(b) for b in raw_bars]
+        bars = [b for b in (self._parse_bar(bar) for bar in raw_bars) if b is not None]
         logger.success(
             "fetch_bars: {} bars returned for {} ({} duration, {} bar size)",
             len(bars), symbol, duration, bar_size,
@@ -256,7 +264,7 @@ class HistoricalFetcher:
         logger.debug("Qualified underlying: {} (conId={})", symbol, qualified[0].conId)
         return qualified[0]
 
-    def _parse_bar(self, bar: object) -> HistoricalBar:
+    def _parse_bar(self, bar: object) -> HistoricalBar | None:
         """Parse a raw ib_insync BarData into a clean HistoricalBar model.
 
         ib_insync returns bar.date as a naive datetime for intraday bars
@@ -268,10 +276,15 @@ class HistoricalFetcher:
             bar: Raw BarData from reqHistoricalDataAsync.
 
         Returns:
-            HistoricalBar with all available fields populated.
+            HistoricalBar with all available fields populated, or None if
+            the bar date cannot be parsed.
         """
-        raw_date = bar.date  # type: ignore[attr-defined]
-        timestamp = _parse_bar_date(raw_date)
+        try:
+            raw_date = bar.date  # type: ignore[attr-defined]
+            timestamp = _parse_bar_date(raw_date)
+        except (ValueError, AttributeError) as exc:
+            logger.warning("Skipping malformed bar {!r}: {}", bar, exc)
+            return None
 
         return HistoricalBar(
             timestamp=timestamp,

@@ -72,11 +72,17 @@ class IBKRClient:
         """
         return self._ib.isConnected()
 
-    async def connect(self) -> None:
+    async def connect(self, *, _from_reconnect: bool = False) -> None:
         """Connect to TWS or IB Gateway.
 
         Reads host, port, clientId, timeout, and readonly from settings.
         Registers the disconnect event handler for auto-reconnect.
+
+        Args:
+            _from_reconnect: Internal flag — set True when called from
+                ``_reconnect_with_backoff`` so that a concurrent
+                ``disconnect()`` call's intentional-disconnect flag is
+                not overwritten (H6).
 
         Raises:
             IBKRConnectionError: If the connection attempt fails.
@@ -104,7 +110,8 @@ class IBKRClient:
                 f"Failed to connect to TWS/Gateway at {host}:{port} — {exc}"
             ) from exc
 
-        self._intentional_disconnect = False
+        if not _from_reconnect:
+            self._intentional_disconnect = False
         logger.success(
             "Connected. Managed accounts: {}", self._ib.managedAccounts()
         )
@@ -218,7 +225,7 @@ class IBKRClient:
             )
             await asyncio.sleep(delay)
             try:
-                await self.connect()
+                await self.connect(_from_reconnect=True)
                 logger.success("Reconnected successfully on attempt {}.", attempt)
                 for cb in self._reconnect_callbacks:
                     try:

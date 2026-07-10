@@ -585,3 +585,78 @@ def test_evaluate_multi_leg_strategy_level_high_when_premium_large():
     )
     alert = rules.evaluate_multi_leg_strategy([trade])
     assert alert.level == AlertLevel.HIGH
+
+
+# ---------------------------------------------------------------------------
+# T5 — evaluate_unusual earnings body lines
+# ---------------------------------------------------------------------------
+
+def test_evaluate_unusual_no_earnings_no_body_line():
+    """No days_to_earnings → no earnings line in body."""
+    rules = _make_rules()
+    sig = _make_unusual_signal()  # trade has no days_to_earnings
+    alert = rules.evaluate_unusual(sig)
+    assert "Earnings" not in alert.body
+
+
+def test_evaluate_unusual_earnings_today():
+    """days_to_earnings == 0 → '⚡ Earnings TODAY' in body."""
+    enriched = _make_enriched_trade(days_to_earnings=0)
+    rules = _make_rules()
+    sig = _make_unusual_signal(trade=enriched)
+    alert = rules.evaluate_unusual(sig)
+    assert "⚡ Earnings TODAY" in alert.body
+
+
+def test_evaluate_unusual_earnings_soon_within_threshold():
+    """days_to_earnings <= pre_earnings_days → '⚡ Earnings in Xd' in body."""
+    enriched = _make_enriched_trade(days_to_earnings=3)
+    rules = _make_rules(pre_earnings_days=5)
+    sig = _make_unusual_signal(trade=enriched)
+    alert = rules.evaluate_unusual(sig)
+    assert "⚡ Earnings in 3d" in alert.body
+
+
+def test_evaluate_unusual_earnings_far_away():
+    """days_to_earnings > pre_earnings_days → '📅 Earnings in Xd' in body."""
+    enriched = _make_enriched_trade(days_to_earnings=30)
+    rules = _make_rules(pre_earnings_days=5)
+    sig = _make_unusual_signal(trade=enriched)
+    alert = rules.evaluate_unusual(sig)
+    assert "📅 Earnings in 30d" in alert.body
+
+
+# ---------------------------------------------------------------------------
+# T5 — evaluate_smart_money earnings body lines
+# ---------------------------------------------------------------------------
+
+def test_evaluate_smart_money_no_earnings_no_body_line():
+    """days_to_earnings=None → no earnings line in body."""
+    rules = _make_rules()
+    sig = _make_smart_money_signal(days_to_earnings=None)
+    alert = rules.evaluate_smart_money(sig)
+    assert "Earnings" not in alert.body
+
+
+def test_evaluate_smart_money_earnings_today():
+    """days_to_earnings == 0 → '⚡ Earnings TODAY' in body."""
+    rules = _make_rules(pre_earnings_days=5)
+    sig = _make_smart_money_signal(days_to_earnings=0)
+    alert = rules.evaluate_smart_money(sig)
+    assert "⚡ Earnings TODAY" in alert.body
+
+
+def test_evaluate_smart_money_earnings_soon():
+    """days_to_earnings=3 <= pre_earnings_days=5 → '⚡ Earnings in 3d' in body."""
+    rules = _make_rules(pre_earnings_days=5)
+    sig = _make_smart_money_signal(days_to_earnings=3)
+    alert = rules.evaluate_smart_money(sig)
+    assert "⚡ Earnings in 3d" in alert.body
+
+
+def test_evaluate_smart_money_earnings_far_away():
+    """days_to_earnings=30 > pre_earnings_days=5 → '📅 Earnings in 30d' in body."""
+    rules = _make_rules(pre_earnings_days=5)
+    sig = _make_smart_money_signal(days_to_earnings=30)
+    alert = rules.evaluate_smart_money(sig)
+    assert "📅 Earnings in 30d" in alert.body

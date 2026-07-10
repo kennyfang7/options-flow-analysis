@@ -15,44 +15,44 @@ python -m pytest -q -m "not integration"
 
 | ID | Severity | File(s) | Description |
 |----|----------|---------|-------------|
-| C1 | Critical | `rate_limiter.py:39–54, 85–100` | No asyncio.Lock on TokenBucket/SlidingWindow — concurrent coroutines race through rate-limit checks |
-| C2 | Critical | `chain_fetcher.py:348` | `or`-chain treats `0.0` price as falsy — falls through to stale close price |
-| C3 | Critical | `greeks_engine.py:222` | `date.today()` uses local wall clock, not UTC — corrupts DTE for all BS Greeks |
-| H1 | High | `queries.py:263–267` | `get_recent_ticks` compares aware UTC datetime against naive-stored values — always returns empty |
-| H2 | High | `queries.py:235–239` | `load_chain_snapshot` passes naive `captured_at` back into pipeline — TypeError on comparison |
-| H3 | High | `flow_classifier.py:369` | `ml_group` key non-unique for rapid same-symbol strategies — causes leg merging |
-| H4 | High | `flow_classifier.py:368` | `ml_net_premium` polluted by unrelated strategy premiums in same window |
-| H5 | High | `tick_stream.py:351–357` | `unsubscribe()` unhooks without `_hook_lock` — TOCTOU race with `subscribe()` |
-| H6 | High | `ibkr_client.py:107, 221` | `connect()` resets `_intentional_disconnect=False` during reconnect — breaks graceful shutdown |
-| H7 | High | `scanner.py:9, 103` | Settings imported at module level — breaks test isolation, inconsistent with all other components |
-| H8 | High | `historical.py:40–61` | `HistoricalBar.timestamp` has no tz-aware validator — naive datetimes accepted silently |
-| H9 | High | `greeks_engine.py:187–194` | Newton-Raphson IV solver has no upper-bound clamp — extreme sigma wastes iterations |
-| H10 | High | `sentiment.py:160` | `update()` prunes on stale `trade.timestamp` — replay bursts inflate window |
-| H11 | High | `earnings.py:69, 138` | `date.today()` is timezone-naive — wrong near UTC midnight |
-| H12 | High | `watchlist.py:177–198` | `save()` non-atomic write + uncaught OSError — data loss on disk error |
-| H13 | High | `historical.py:314–319` | `_parse_bar_date` string fallback raises bare ValueError — drops entire symbol fetch |
-| M1 | Medium | `db.py:125–136` | Async engine singleton `_get_engine` has no lock (sync counterpart does) |
-| M2 | Medium | `rules.py:359` | `net_prem or sum(...)` treats zero premium as falsy — wrong for zero-debit spreads |
-| M3 | Medium | `rules.py:106–155` | `MultiLegBuffer` stale groups never evicted — unbounded memory growth |
-| M4 | Medium | `callbacks.py:186–209` | `_query_signal_rows` full table scan when no symbol filter — composite index unusable |
-| M5 | Medium | `shared_state.py:113` / `callbacks.py:274` | `drain_alerts` hardcoded `max_count=50` diverges from `dashboard_max_alerts` |
-| M6 | Medium | `callbacks.py:100, 120` | `.strftime()` on potentially-None datetimes — crashes callback silently |
-| M7 | Medium | `flow_classifier.py:107` | `volume_delta: int` lacks `ge=1` Pydantic constraint |
-| M8 | Medium | `flow_classifier.py:350–351` | `_symbol_recent` deques unbounded — potential memory growth under high-frequency ticks |
-| M9 | Medium | `flow_classifier.py:173–201` | 3-leg strategies always return COMBO — undocumented limitation |
-| M10 | Medium | `greeks_engine.py:391–404` | `model_dump()` + `**kwargs` EnrichedTrade construction fragile for future excluded fields |
-| M11 | Medium | `rate_limiter.py:87` | Off-by-one: `<=` evicts timestamps at boundary — under-counts by 1 |
-| M12 | Medium | `scanner.py:225–252` | `_parse_scan_data` bare attribute access — AttributeError on malformed rows crashes scan |
-| M13 | Medium | `chain_fetcher.py:452–458` | One rate-limit token per batch of 50 contracts — budget ~50x underestimated |
-| M14 | Medium | `run_scanner.py:138` / `run_dashboard.py:178` | Scripts mutate `unusual._oi_cache` directly — breaks encapsulation |
+| C1 ✓ | Critical | `rate_limiter.py:39–54, 85–100` | No asyncio.Lock on TokenBucket/SlidingWindow — concurrent coroutines race through rate-limit checks |
+| C2 ✓ | Critical | `chain_fetcher.py:348` | `or`-chain treats `0.0` price as falsy — falls through to stale close price |
+| C3 ✓ | Critical | `greeks_engine.py:222` | `date.today()` uses local wall clock, not UTC — corrupts DTE for all BS Greeks |
+| H1 ✓ | High | `queries.py:263–267` | `get_recent_ticks` compares aware UTC datetime against naive-stored values — always returns empty |
+| H2 ✓ | High | `queries.py:235–239` | `load_chain_snapshot` passes naive `captured_at` back into pipeline — TypeError on comparison |
+| H3 ✓ | High | `flow_classifier.py:369` | `ml_group` key non-unique for rapid same-symbol strategies — causes leg merging |
+| H4 ✓ | High | `flow_classifier.py:368` | `ml_net_premium` polluted by unrelated strategy premiums in same window |
+| H5 ✓ | High | `tick_stream.py:351–357` | `unsubscribe()` unhooks without `_hook_lock` — TOCTOU race with `subscribe()` |
+| H6 ✓ | High | `ibkr_client.py:107, 221` | `connect()` resets `_intentional_disconnect=False` during reconnect — breaks graceful shutdown |
+| H7 ✓ | High | `scanner.py:9, 103` | Settings imported at module level — breaks test isolation, inconsistent with all other components |
+| H8 ✓ | High | `historical.py:40–61` | `HistoricalBar.timestamp` has no tz-aware validator — naive datetimes accepted silently |
+| H9 ✓ | High | `greeks_engine.py:187–194` | Newton-Raphson IV solver has no upper-bound clamp — extreme sigma wastes iterations |
+| H10 ✓ | High | `sentiment.py:160` | `update()` prunes on stale `trade.timestamp` — replay bursts inflate window |
+| H11 ✓ | High | `earnings.py:69, 138` | `date.today()` is timezone-naive — wrong near UTC midnight |
+| H12 ✓ | High | `watchlist.py:177–198` | `save()` non-atomic write + uncaught OSError — data loss on disk error |
+| H13 ✓ | High | `historical.py:314–319` | `_parse_bar_date` string fallback raises bare ValueError — drops entire symbol fetch |
+| M1 ✓ | Medium | `db.py:125–136` | Async engine singleton `_get_engine` has no lock (sync counterpart does) |
+| M2 ✓ | Medium | `rules.py:359` | `net_prem or sum(...)` treats zero premium as falsy — wrong for zero-debit spreads |
+| M3 ✓ | Medium | `rules.py:106–155` | `MultiLegBuffer` stale groups never evicted — unbounded memory growth |
+| M4 ✓ | Medium | `callbacks.py:186–209` | `_query_signal_rows` full table scan when no symbol filter — composite index unusable |
+| M5 ✓ | Medium | `shared_state.py:113` / `callbacks.py:274` | `drain_alerts` hardcoded `max_count=50` diverges from `dashboard_max_alerts` |
+| M6 ✓ | Medium | `callbacks.py:100, 120` | `.strftime()` on potentially-None datetimes — crashes callback silently |
+| M7 ✓ | Medium | `flow_classifier.py:107` | `volume_delta: int` lacks `ge=1` Pydantic constraint |
+| M8 ✓ | Medium | `flow_classifier.py:350–351` | `_symbol_recent` deques unbounded — potential memory growth under high-frequency ticks |
+| M9 ✓ | Medium | `flow_classifier.py:173–201` | 3-leg strategies always return COMBO — undocumented limitation |
+| M10 ✓ | Medium | `greeks_engine.py:391–404` | `model_dump()` + `**kwargs` EnrichedTrade construction fragile for future excluded fields |
+| M11 ✓ | Medium | `rate_limiter.py:87` | Off-by-one: `<=` evicts timestamps at boundary — already fixed (strict `<` in code) |
+| M12 ✓ | Medium | `scanner.py:225–252` | `_parse_scan_data` bare attribute access — AttributeError on malformed rows crashes scan |
+| M13 ✓ | Medium | `chain_fetcher.py:452–458` | One rate-limit token per batch of 50 contracts — budget ~50x underestimated |
+| M14 ✓ | Medium | `run_scanner.py:138` / `run_dashboard.py:178` | Scripts mutate `unusual._oi_cache` directly — breaks encapsulation |
 | M15 | Medium | `run_dashboard.py:77–267` | `_pipeline()` is verbatim copy of `run_pipeline()` — maintenance divergence risk |
-| M16 | Medium | `run_dashboard.py:284, 111` | `init_db()` called twice — second failure silently swallowed |
+| M16 ✓ | Medium | `run_dashboard.py:284, 111` | `init_db()` called twice — second failure silently swallowed |
 
 ---
 
 ## CRITICAL
 
-### [ ] C1. No mutex protecting RateLimiter token bucket and sliding window
+### [x] C1. No mutex protecting RateLimiter token bucket and sliding window
 
 **File:** `src/connection/rate_limiter.py:39–54` (`_TokenBucket.consume`), `85–100` (`_SlidingWindow.consume`)
 
@@ -90,7 +90,7 @@ Apply the same pattern to `_SlidingWindow.consume()`.
 
 ---
 
-### [ ] C2. `_get_underlying_price` treats `0.0` as falsy via `or`-chain
+### [x] C2. `_get_underlying_price` treats `0.0` as falsy via `or`-chain
 
 **File:** `src/data/chain_fetcher.py:348`
 
@@ -125,7 +125,7 @@ price = _first_valid_price(
 
 ---
 
-### [ ] C3. `_days_to_expiry` uses `date.today()` (local wall clock) instead of UTC
+### [x] C3. `_days_to_expiry` uses `date.today()` (local wall clock) instead of UTC
 
 **File:** `src/analysis/greeks_engine.py:212–223`
 
@@ -156,7 +156,7 @@ def _days_to_expiry(expiry: str) -> int:
 
 ## HIGH
 
-### [ ] H1. `get_recent_ticks` aware-vs-naive datetime mismatch — always returns empty
+### [x] H1. `get_recent_ticks` aware-vs-naive datetime mismatch — always returns empty
 
 **File:** `src/storage/queries.py:263–267`
 
@@ -181,7 +181,7 @@ since = _to_naive_utc(datetime.now(timezone.utc) - timedelta(minutes=minutes))
 
 ---
 
-### [ ] H2. `load_chain_snapshot` passes naive `captured_at` into pipeline
+### [x] H2. `load_chain_snapshot` passes naive `captured_at` into pipeline
 
 **File:** `src/storage/queries.py:235–239`
 
@@ -202,7 +202,7 @@ timestamp=captured_at,   # the aware UTC local from line 194
 
 ---
 
-### [ ] H3. `ml_group` key non-unique for rapid same-symbol strategies
+### [x] H3. `ml_group` key non-unique for rapid same-symbol strategies
 
 **File:** `src/analysis/flow_classifier.py:369`
 
@@ -223,7 +223,7 @@ Or generate a monotonically unique ID.
 
 ---
 
-### [ ] H4. `strategy_net_premium` polluted by unrelated strategies in window
+### [x] H4. `strategy_net_premium` polluted by unrelated strategies in window
 
 **File:** `src/analysis/flow_classifier.py:368`
 
@@ -239,7 +239,7 @@ already does as a fallback). Remove or deprecate the per-tick `strategy_net_prem
 
 ---
 
-### [ ] H5. `unsubscribe()` unhooks without `_hook_lock` — TOCTOU race
+### [x] H5. `unsubscribe()` unhooks without `_hook_lock` — TOCTOU race
 
 **File:** `src/data/tick_stream.py:351–357`
 
@@ -260,7 +260,7 @@ async with self._hook_lock:
 
 ---
 
-### [ ] H6. `connect()` resets `_intentional_disconnect=False` during reconnect
+### [x] H6. `connect()` resets `_intentional_disconnect=False` during reconnect
 
 **File:** `src/connection/ibkr_client.py:107, 221`
 
@@ -281,7 +281,7 @@ await self.connect(_from_reconnect=True)
 
 ---
 
-### [ ] H7. `scanner.py` imports settings at module level — breaks test isolation
+### [x] H7. `scanner.py` imports settings at module level — breaks test isolation
 
 **File:** `src/data/scanner.py:9, 103`
 
@@ -301,7 +301,7 @@ class MarketScanner:
 
 ---
 
-### [ ] H8. `HistoricalBar.timestamp` missing tz-aware validator
+### [x] H8. `HistoricalBar.timestamp` missing tz-aware validator
 
 **File:** `src/data/historical.py:40–61`
 
@@ -321,7 +321,7 @@ def timestamp_must_be_tz_aware(cls, v):
 
 ---
 
-### [ ] H9. Newton-Raphson IV solver has no upper-bound sigma clamp
+### [x] H9. Newton-Raphson IV solver has no upper-bound sigma clamp
 
 **File:** `src/analysis/greeks_engine.py:187–194`
 
@@ -336,7 +336,7 @@ sigma = max(1e-6, min(sigma, 10.0))  # IV > 1000% is not physical
 
 ---
 
-### [ ] H10. `SentimentAggregator.update()` prunes on `trade.timestamp`, not wall clock
+### [x] H10. `SentimentAggregator.update()` prunes on `trade.timestamp`, not wall clock
 
 **File:** `src/analysis/sentiment.py:147–160`
 
@@ -351,7 +351,7 @@ self._prune(symbol, reference)
 
 ---
 
-### [ ] H11. `EarningsCalendar` uses `date.today()` — timezone-naive
+### [x] H11. `EarningsCalendar` uses `date.today()` — timezone-naive
 
 **File:** `src/utils/earnings.py:69, 138`
 
@@ -367,7 +367,7 @@ Apply at lines 69 and 138.
 
 ---
 
-### [ ] H12. `WatchlistManager.save()` non-atomic write + uncaught OSError
+### [x] H12. `WatchlistManager.save()` non-atomic write + uncaught OSError
 
 **File:** `src/utils/watchlist.py:177–198`
 
@@ -388,7 +388,7 @@ except OSError:
 
 ---
 
-### [ ] H13. `_parse_bar_date` string fallback raises bare ValueError
+### [x] H13. `_parse_bar_date` string fallback raises bare ValueError
 
 **File:** `src/data/historical.py:314–319`
 
@@ -410,7 +410,7 @@ Then filter `None` in `fetch_bars()`.
 
 ## MEDIUM
 
-### [ ] M1. Async engine singleton lacks lock (sync counterpart has one)
+### [x] M1. Async engine singleton lacks lock (sync counterpart has one)
 
 **File:** `src/storage/db.py:125–136`
 
@@ -422,7 +422,7 @@ correctly uses double-checked locking. Inconsistent — two engines can be creat
 
 ---
 
-### [ ] M2. `net_prem or sum(...)` treats zero premium as falsy
+### [x] M2. `net_prem or sum(...)` treats zero premium as falsy
 
 **File:** `src/alerts/rules.py:359`
 
@@ -444,7 +444,7 @@ net_prem = (
 
 ---
 
-### [ ] M3. `MultiLegBuffer` stale groups never evicted — unbounded memory growth
+### [x] M3. `MultiLegBuffer` stale groups never evicted — unbounded memory growth
 
 **File:** `src/alerts/rules.py:106–155`
 
@@ -456,7 +456,7 @@ layer alongside the other `purge_stale()` calls.
 
 ---
 
-### [ ] M4. Dashboard queries do full table scan when no symbol filter applied
+### [x] M4. Dashboard queries do full table scan when no symbol filter applied
 
 **File:** `src/dashboard/callbacks.py:186–209`
 
@@ -471,7 +471,7 @@ Index("ix_classified_trades_classified_at", "classified_at"),
 
 ---
 
-### [ ] M5. `drain_alerts` hardcoded `max_count=50` — lags behind bursts
+### [x] M5. `drain_alerts` hardcoded `max_count=50` — lags behind bursts
 
 **File:** `src/dashboard/shared_state.py:113`, `src/dashboard/callbacks.py:274`
 
@@ -482,7 +482,7 @@ Burst of >50 alerts causes backlog → new alerts dropped.
 
 ---
 
-### [ ] M6. `.strftime()` on potentially-None datetimes in callbacks
+### [x] M6. `.strftime()` on potentially-None datetimes in callbacks
 
 **File:** `src/dashboard/callbacks.py:100, 120`
 
@@ -493,7 +493,7 @@ the value is `None` (possible with schema-migrated rows).
 
 ---
 
-### [ ] M7. `ClassifiedTrade.volume_delta` lacks `ge=1` constraint
+### [x] M7. `ClassifiedTrade.volume_delta` lacks `ge=1` constraint
 
 **File:** `src/analysis/flow_classifier.py:107`
 
@@ -504,7 +504,7 @@ but direct construction (tests, future code) can pass negative values, inverting
 
 ---
 
-### [ ] M8. `_symbol_recent` deques unbounded — memory growth risk
+### [x] M8. `_symbol_recent` deques unbounded — memory growth risk
 
 **File:** `src/analysis/flow_classifier.py:350–351`
 
@@ -514,7 +514,7 @@ Per-contract windows use `deque(maxlen=500)`. `_symbol_recent` deques have no `m
 
 ---
 
-### [ ] M9. 3-leg strategies always return COMBO — undocumented
+### [x] M9. 3-leg strategies always return COMBO — undocumented
 
 **File:** `src/analysis/flow_classifier.py:173–201`
 
@@ -526,7 +526,7 @@ structures are not specifically identified."
 
 ---
 
-### [ ] M10. `EnrichedTrade` construction via `model_dump()` is fragile
+### [x] M10. `EnrichedTrade` construction via `model_dump()` is fragile
 
 **File:** `src/analysis/greeks_engine.py:391–404`
 
@@ -537,7 +537,7 @@ It's re-injected manually. Future `exclude=True` fields must also be re-injected
 
 ---
 
-### [ ] M11. Sliding window off-by-one: `<=` evicts boundary timestamps
+### [x] M11. Sliding window off-by-one: `<=` evicts boundary timestamps
 
 **File:** `src/connection/rate_limiter.py:87`
 
@@ -552,7 +552,7 @@ this is unlikely to trigger real pacing errors.
 
 ---
 
-### [ ] M12. `_parse_scan_data` crashes on malformed rows
+### [x] M12. `_parse_scan_data` crashes on malformed rows
 
 **File:** `src/data/scanner.py:225–252`
 
@@ -563,7 +563,7 @@ One bad row kills all valid rows in the scan.
 
 ---
 
-### [ ] M13. One rate-limit token per batch of 50 contracts
+### [x] M13. One rate-limit token per batch of 50 contracts
 
 **File:** `src/data/chain_fetcher.py:452–458`
 
@@ -575,7 +575,7 @@ whether it's 1 message or N messages.
 
 ---
 
-### [ ] M14. Scripts mutate `unusual._oi_cache` directly
+### [x] M14. Scripts mutate `unusual._oi_cache` directly
 
 **File:** `scripts/run_scanner.py:138–139`, `scripts/run_dashboard.py:178–179`
 
@@ -596,7 +596,7 @@ with callback injection.
 
 ---
 
-### [ ] M16. `init_db()` called twice — second failure silently swallowed
+### [x] M16. `init_db()` called twice — second failure silently swallowed
 
 **File:** `scripts/run_dashboard.py:284, 111`
 
@@ -607,7 +607,7 @@ caught by generic except, displayed as status string). Remove the `_pipeline()` 
 
 ## TESTS — Coverage Gaps
 
-### [ ] T1. `load_chain_snapshot` staleness branches untested (Critical)
+### [x] T1. `load_chain_snapshot` staleness branches untested (Critical)
 
 **File:** `src/storage/queries.py:151`
 
@@ -619,7 +619,7 @@ assert `None` returned. Three parametrized test cases.
 
 ---
 
-### [ ] T2. `db.py` PostgreSQL URL adaptation branch has zero coverage (Critical)
+### [x] T2. `db.py` PostgreSQL URL adaptation branch has zero coverage (Critical)
 
 **File:** `src/storage/db.py:19`
 
@@ -631,7 +631,7 @@ PostgreSQL URLs and assert the transformations.
 
 ---
 
-### [ ] T3. `historical.py` — `fetch_bars` validation, `_parse_bar_date`, `to_dataframe` untested (High)
+### [x] T3. `historical.py` — `fetch_bars` validation, `_parse_bar_date`, `to_dataframe` untested (High)
 
 Multiple entirely-untested functions: invalid `bar_size`/`what_to_show` → `ValueError`,
 `_parse_bar_date` with all input types (datetime, date, various string formats),
@@ -640,7 +640,7 @@ Multiple entirely-untested functions: invalid `bar_size`/`what_to_show` → `Val
 
 ---
 
-### [ ] T4. `get_recent_ticks` and `get_latest_snapshot` have no unit tests (High)
+### [x] T4. `get_recent_ticks` and `get_latest_snapshot` have no unit tests (High)
 
 **File:** `src/storage/queries.py:248, 130`
 
@@ -652,7 +652,7 @@ rows returned.
 
 ---
 
-### [ ] T5. `rules.py` — earnings body lines in `evaluate_unusual` and `evaluate_smart_money` untested (High)
+### [x] T5. `rules.py` — earnings body lines in `evaluate_unusual` and `evaluate_smart_money` untested (High)
 
 **File:** `src/alerts/rules.py:223, 303`
 
@@ -664,14 +664,14 @@ values of 0, 3, and 30.
 
 ---
 
-### [ ] T6. `shared_state.py` — `update_pipeline_status` / `get_pipeline_status` untested (High)
+### [x] T6. `shared_state.py` — `update_pipeline_status` / `get_pipeline_status` untested (High)
 
 Never called in `test_dashboard.py`. The primary bridge between pipeline health and the
 dashboard status indicator.
 
 ---
 
-### [ ] T7. `callbacks.py` — formatting helpers `_fmt_ratio`, `_fmt_dollars`, `_fmt_pct` untested (High)
+### [x] T7. `callbacks.py` — formatting helpers `_fmt_ratio`, `_fmt_dollars`, `_fmt_pct` untested (High)
 
 **File:** `src/dashboard/callbacks.py:26`
 
@@ -680,19 +680,19 @@ indirectly through snapshot values.
 
 ---
 
-### [ ] T8. `db.py` — `init_db()` SQLite WAL-mode pragma not verified (Medium)
+### [x] T8. `db.py` — `init_db()` SQLite WAL-mode pragma not verified (Medium)
 
 No test confirms the `PRAGMA journal_mode=wal` is issued for SQLite.
 
 ---
 
-### [ ] T9. `queries.py` — `_to_naive_utc()` with non-UTC aware datetime untested (Medium)
+### [x] T9. `queries.py` — `_to_naive_utc()` with non-UTC aware datetime untested (Medium)
 
 The conversion from e.g., US/Eastern to naive UTC is never directly tested.
 
 ---
 
-### [ ] T10. `historical.py` — `_qualify_underlying()` failure paths untested (Medium)
+### [x] T10. `historical.py` — `_qualify_underlying()` failure paths untested (Medium)
 
 `ValueError` when IBKR returns empty list or `conId == 0` — no test coverage.
 
@@ -786,5 +786,5 @@ The conversion from e.g., US/Eastern to naive UTC is never directly tested.
 ---
 
 ## Post-fix checklist
-- [ ] `python -m pytest -q -m "not integration"` — all green
-- [ ] Update `MEMORY.md` with new fixes
+- [x] `python -m pytest -q -m "not integration"` — all green (675 passed)
+- [x] Update `MEMORY.md` with new fixes

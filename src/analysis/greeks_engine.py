@@ -186,8 +186,7 @@ def _implied_vol(
             return None
 
         sigma -= (bs - price) / raw_vega
-        if sigma < 1e-6:
-            sigma = 1e-6
+        sigma = max(1e-6, min(sigma, 10.0))  # IV > 1000% is not physical
 
         if abs(bs - price) < tol:
             return max(sigma, 1e-6)
@@ -387,8 +386,9 @@ class GreeksEngine:
         moneyness = _classify_moneyness(trade.underlying_price, trade.strike, trade.right)
 
         # --- Step 4: Build EnrichedTrade ---
-        # model_dump() excludes 'tick' (Field(exclude=True) on ClassifiedTrade).
-        # Override delta and implied_vol with enriched values.
+        # model_dump() excludes fields marked Field(exclude=True) on ClassifiedTrade
+        # (currently: 'tick'). Those fields must be re-injected manually below.
+        # CONTRACT: if future ClassifiedTrade fields gain exclude=True, add them here.
         base = trade.model_dump()
         base["delta"] = delta
         base["implied_vol"] = implied_vol

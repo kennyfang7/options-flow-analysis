@@ -134,9 +134,7 @@ async def run_pipeline(symbols: list[str]) -> None:
                         )
 
                     # Seed OI cache so UnusualDetector has baseline values
-                    for c in snapshot.contracts:
-                        if c.con_id is not None and c.open_interest is not None:
-                            unusual._oi_cache[c.con_id] = c.open_interest
+                    unusual.seed_oi_cache(snapshot.contracts)
 
                     logger.info(
                         "Subscribed {} contracts for {} ({} total)",

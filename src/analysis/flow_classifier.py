@@ -104,7 +104,7 @@ class ClassifiedTrade(BaseModel):
     last_size: int | None
     premium: float | None
     signal_strength: float | None
-    volume_delta: int
+    volume_delta: int = Field(ge=1)
     window_ticks: int
     multi_leg_strategy: MultiLegStrategy | None = None
     strategy_net_premium: float | None = None  # cumulative premium across all legs in window
@@ -163,6 +163,10 @@ def _sizes_within_tolerance(
 
 def _classify_multi_leg_strategy(legs: list[tuple[str, float, str]]) -> MultiLegStrategy:
     """Classify a list of (right, strike, expiry) tuples into a named strategy.
+
+    Note: 3-leg strategies always return COMBO — butterflies and other 3-leg
+    structures are not specifically identified. Only 2-leg and 4-leg patterns
+    are matched to named strategies.
 
     Args:
         legs: List of (right, strike, expiry) tuples for each leg.
@@ -348,7 +352,7 @@ class FlowClassifier:
 
         # 6.5  Cross-contract multi-leg check
         if tick.symbol not in self._symbol_recent:
-            self._symbol_recent[tick.symbol] = deque()
+            self._symbol_recent[tick.symbol] = deque(maxlen=1000)
         sym_win = self._symbol_recent[tick.symbol]
         sym_win.append((con_id, now, premium))
         ml_cutoff = now - timedelta(seconds=s.multi_leg_window_seconds)
@@ -365,8 +369,13 @@ class FlowClassifier:
                     t = self._windows[cid][-1][0]
                     legs.append((t.right, t.strike, t.expiry))
             ml_strategy     = _classify_multi_leg_strategy(legs)
-            ml_net_premium  = sum(p for _, _, p in sym_win)  # all legs in window
-            ml_group        = f"{tick.symbol}:{sym_win[0][1].isoformat()}"
+            # strategy_net_premium intentionally None: sym_win contains ALL contracts
+            # within multi_leg_window_seconds, not just this strategy's legs.
+            # rules.py computes the correct per-strategy net premium from buffered legs.
+            ml_net_premium  = None
+            # Include con_id so concurrent same-symbol strategies sharing the same
+            # window-open timestamp get distinct group keys (H3).
+            ml_group        = f"{tick.symbol}:{sym_win[0][1].isoformat()}:{tick.con_id}"
         else:
             ml_strategy    = None
             ml_net_premium = None

@@ -475,7 +475,10 @@ class ChainFetcher:
 
         for idx, batch in enumerate(batches, 1):
             logger.debug("Qualifying batch {}/{} ({} contracts)", idx, len(batches), len(batch))
-            await self._limiter.acquire()
+            # qualifyContractsAsync sends one reqContractDetails message per contract,
+            # so we must acquire one token per contract in the batch (M13).
+            for _ in range(len(batch)):
+                await self._limiter.acquire()
             result = await self._ib.qualifyContractsAsync(*batch)
             qualified.extend(c for c in result if c.conId != 0)
             if idx < len(batches):
